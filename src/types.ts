@@ -32,6 +32,7 @@ export interface Booking {
   clientPhone: string;
   bookingType: "walk_in" | "appointment" | "online";
   services: SalonService[];
+  products?: Product[]; // Optional list of products sold/used
   staffId: string;
   staffName: string;
   totalAmount: number;
@@ -115,3 +116,15 @@ export interface KhataLog {
 }
 
 export type ActiveTab = "dashboard" | "pos" | "staff" | "leaves" | "bookings" | "payments" | "services" | "monthly_archives" | "expenses" | "khata" | "products";
+
+export interface StaffAttendance {
+  id: string;
+  staffId: string;
+  staffName: string;
+  date: string; // YYYY-MM-DD
+  checkIn: string; // e.g. "10:15"
+  checkOut?: string | null; // e.g. "18:00" or null
+  status: "on_time" | "late" | "present" | "absent";
+  punctualityMinutes?: number; // minutes after reference arrival time (e.g., 10:00 AM)
+  notes?: string;
+}

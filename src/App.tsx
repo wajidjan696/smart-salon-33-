@@ -6,9 +6,10 @@ import {
   getBookings, 
   seedDatabaseIfEmpty,
   clearAllDatabase,
-  getMonthlyArchives
+  getMonthlyArchives,
+  getProducts
 } from "./firebaseService";
-import { SalonService, StaffMember, StaffLeave, Booking, ActiveTab, MonthlyArchive } from "./types";
+import { SalonService, StaffMember, StaffLeave, Booking, ActiveTab, MonthlyArchive, Product } from "./types";
 import DashboardOverview from "./components/DashboardOverview";
 import PosBilling from "./components/PosBilling";
 import StaffManagement from "./components/StaffManagement";
@@ -45,6 +46,7 @@ export default function App() {
   const [leaves, setLeaves] = useState<StaffLeave[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [monthlyArchives, setMonthlyArchives] = useState<MonthlyArchive[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
@@ -111,12 +113,13 @@ export default function App() {
       await seedDatabaseIfEmpty();
 
       // 2. Fetch everything
-      const [allServices, allStaff, allLeaves, allBookings, allArchives] = await Promise.all([
+      const [allServices, allStaff, allLeaves, allBookings, allArchives, allProducts] = await Promise.all([
         getServices(),
         getStaff(),
         getLeaves(),
         getBookings(),
-        getMonthlyArchives()
+        getMonthlyArchives(),
+        getProducts()
       ]);
 
       setServices(allServices);
@@ -124,6 +127,7 @@ export default function App() {
       setLeaves(allLeaves);
       setBookings(allBookings);
       setMonthlyArchives(allArchives);
+      setProducts(allProducts);
 
     } catch (error) {
       console.error("Error loading application data:", error);
@@ -283,6 +287,7 @@ export default function App() {
               {activeTab === "pos" && (
                 <PosBilling
                   services={services}
+                  products={products}
                   staff={staff}
                   onBookingAdded={() => loadData(true)}
                 />
@@ -324,7 +329,7 @@ export default function App() {
                 <KhataBook staff={staff} />
               )}
               {activeTab === "products" && (
-                <ProductsManager staff={staff} />
+                <ProductsManager staff={staff} onProductsUpdated={() => loadData(true)} />
               )}
             </motion.div>
           )}

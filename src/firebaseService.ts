@@ -10,7 +10,7 @@ import {
   orderBy
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { SalonService, StaffMember, StaffLeave, Booking, MonthlyArchive, Expense, Product, ProductSale, KhataAccount, KhataLog } from "./types";
+import { SalonService, StaffMember, StaffLeave, Booking, MonthlyArchive, Expense, Product, ProductSale, KhataAccount, KhataLog, StaffAttendance } from "./types";
 import { INITIAL_SERVICES, INITIAL_STAFF, INITIAL_LEAVES, INITIAL_BOOKINGS } from "./data";
 
 // Helper to seed data if empty or missing major parts
@@ -304,7 +304,7 @@ export async function clearAllDatabase(): Promise<void> {
   // Set flag in localStorage to prevent seedDatabaseIfEmpty from auto-filling
   localStorage.setItem("smartsalon_prevent_seeding", "true");
 
-  const collections = ["services", "staff", "leaves", "bookings", "monthly_archives", "expenses", "products", "product_sales", "khata_accounts", "khata_logs", "metadata"];
+  const collections = ["services", "staff", "leaves", "bookings", "monthly_archives", "expenses", "products", "product_sales", "khata_accounts", "khata_logs", "metadata", "staff_attendance"];
   
   for (const col of collections) {
     try {
@@ -319,3 +319,23 @@ export async function clearAllDatabase(): Promise<void> {
 
   console.log("All salon collections cleared successfully for a fresh start.");
 }
+
+// 10. STAFF ATTENDANCE
+export async function getStaffAttendance(): Promise<StaffAttendance[]> {
+  const q = query(collection(db, "staff_attendance"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
+  const items: StaffAttendance[] = [];
+  snap.forEach((doc) => {
+    items.push({ ...doc.data() } as StaffAttendance);
+  });
+  return items;
+}
+
+export async function saveStaffAttendance(attendance: StaffAttendance): Promise<void> {
+  await setDoc(doc(db, "staff_attendance", attendance.id), attendance);
+}
+
+export async function deleteStaffAttendance(id: string): Promise<void> {
+  await deleteDoc(doc(db, "staff_attendance", id));
+}
+

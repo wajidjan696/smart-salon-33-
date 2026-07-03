@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { SalonService, StaffMember, Booking, KhataAccount, KhataLog } from "../types";
+import { SalonService, StaffMember, Booking, KhataAccount, KhataLog, Product } from "../types";
 import { motion, AnimatePresence } from "motion/react";
-import { addBooking, saveKhataAccount, addKhataLog } from "../firebaseService";
+import { addBooking, saveKhataAccount, addKhataLog, updateProduct } from "../firebaseService";
 import { 
   User, 
   Phone, 
@@ -18,16 +18,18 @@ import {
 
 interface PosBillingProps {
   services: SalonService[];
+  products: Product[];
   staff: StaffMember[];
   onBookingAdded: () => void;
 }
 
-export default function PosBilling({ services, staff, onBookingAdded }: PosBillingProps) {
+export default function PosBilling({ services, products, staff, onBookingAdded }: PosBillingProps) {
   // POS Form State
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [bookingType, setBookingType] = useState<"walk_in" | "appointment" | "online">("walk_in");
   const [selectedServices, setSelectedServices] = useState<SalonService[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "easypaisa" | "jazzcash" | "bank_transfer" | "online">("cash");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
@@ -44,11 +46,19 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchServiceQuery, setSearchServiceQuery] = useState("");
+  const [searchProductQuery, setSearchProductQuery] = useState("");
+  const [pickerTab, setPickerTab] = useState<"services" | "products">("services");
 
   // Filter services by search
   const filteredServices = services.filter(s => 
     s.name.toLowerCase().includes(searchServiceQuery.toLowerCase()) ||
     s.category.toLowerCase().includes(searchServiceQuery.toLowerCase())
+  );
+
+  // Filter products by search
+  const filteredProducts = (products || []).filter(p => 
+    p.name.toLowerCase().includes(searchProductQuery.toLowerCase()) ||
+    p.category.toLowerCase().includes(searchProductQuery.toLowerCase())
   );
 
   // Toggle Service selection - now always appends to allow duplicates (multiple selections/quantities)
@@ -84,8 +94,42 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
     return acc;
   }, []);
 
+  // Product Selection Handlers
+  const handleToggleProduct = (product: Product) => {
+    setSelectedProducts([...selectedProducts, product]);
+  };
+
+  const handleRemoveProductInstance = (productId: string) => {
+    const idx = selectedProducts.findIndex(p => p.id === productId);
+    if (idx > -1) {
+      const updated = [...selectedProducts];
+      updated.splice(idx, 1);
+      setSelectedProducts(updated);
+    }
+  };
+
+  const handleRemoveAllProductInstances = (productId: string) => {
+    setSelectedProducts(selectedProducts.filter(p => p.id !== productId));
+  };
+
+  const getProductQuantity = (productId: string) => {
+    return selectedProducts.filter(p => p.id === productId).length;
+  };
+
+  const groupedSelectedProducts = selectedProducts.reduce((acc: { product: Product; quantity: number }[], product) => {
+    const existing = acc.find(item => item.product.id === product.id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      acc.push({ product, quantity: 1 });
+    }
+    return acc;
+  }, []);
+
   // Calculate Subtotal
-  const totalAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
+  const totalServicesAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
+  const totalProductsAmount = selectedProducts.reduce((sum, p) => sum + p.price, 0);
+  const totalAmount = totalServicesAmount + totalProductsAmount;
 
   // Submit Sale Handler
   const handleSubmitSale = async (e: React.FormEvent) => {
@@ -114,8 +158,8 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
       }
     }
 
-    if (selectedServices.length === 0) {
-      setError("Meharbani karke kam se kam ek Service zaroor choose karein!");
+    if (selectedServices.length === 0 && selectedProducts.length === 0) {
+      setError("Meharbani karke kam se kam ek Service ya Product zaroor choose karein!");
       return;
     }
     if (!selectedStaffId) {
@@ -136,6 +180,7 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
         clientPhone: finalClientPhone,
         bookingType,
         services: selectedServices,
+        products: selectedProducts,
         staffId: selectedStaffId,
         staffName,
         totalAmount,
@@ -150,6 +195,18 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
       // Save to Firebase
       await addBooking(newBooking);
 
+      // Subtract selected products stock
+      for (const item of groupedSelectedProducts) {
+        const dbProduct = products.find(p => p.id === item.product.id);
+        if (dbProduct) {
+          const updatedStock = Math.max(0, dbProduct.stock - item.quantity);
+          await updateProduct({
+            ...dbProduct,
+            stock: updatedStock
+          });
+        }
+      }
+
       // Automatically register client dues in Khata Book if payment is unpaid (not received / khata)
       if (paymentStatus === "unpaid") {
         const khataId = `khata-client-${finalClientPhone}`;
@@ -163,13 +220,18 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
         };
         await saveKhataAccount(newKhata);
 
+        const itemNames = [
+          ...selectedServices.map(s => s.name),
+          ...selectedProducts.map(p => p.name)
+        ];
+
         const khataLog: KhataLog = {
           id: `klog-${Date.now()}`,
           accountId: khataId,
           accountName: finalClientName,
           amount: totalAmount,
           type: "debit",
-          description: `POS Bill: ${selectedServices.map(s => s.name).join(", ")}`,
+          description: `POS Bill: ${itemNames.join(", ")}`,
           date,
           createdAt: new Date().toISOString()
         };
@@ -184,6 +246,7 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
       setClientPhone("");
       setBookingType("walk_in");
       setSelectedServices([]);
+      setSelectedProducts([]);
       setSelectedStaffId("");
       setPaymentMethod("cash");
       setPaymentStatus("paid");
@@ -308,99 +371,231 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
             </div>
           </div>
 
-          {/* Section 2: Services Picker */}
+          {/* Section 2: Tabbed Picker (Services vs Products) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sparkles size={18} className="text-amber-500" />
-                Services Select Karein (Choose Services)
-              </h3>
-              <input
-                type="text"
-                placeholder="Service ya category search karein..."
-                value={searchServiceQuery}
-                onChange={(e) => setSearchServiceQuery(e.target.value)}
-                className="bg-slate-950 border border-slate-800 focus:border-amber-500/40 rounded-lg px-3 py-1.5 text-xs text-white outline-none transition duration-200 w-full sm:w-56 placeholder-slate-600"
-              />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/80 pb-3">
+              {/* Tab Switcher */}
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPickerTab("services")}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition duration-150 flex items-center gap-1.5 ${
+                    pickerTab === "services"
+                      ? "bg-amber-500 text-slate-950 shadow"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Sparkles size={13} />
+                  Services Menu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPickerTab("products")}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition duration-150 flex items-center gap-1.5 ${
+                    pickerTab === "products"
+                      ? "bg-amber-500 text-slate-950 shadow"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <ShoppingBag size={13} />
+                  Products Shop
+                </button>
+              </div>
+
+              {/* Search Inputs based on active tab */}
+              {pickerTab === "services" ? (
+                <input
+                  type="text"
+                  placeholder="Service ya category search karein..."
+                  value={searchServiceQuery}
+                  onChange={(e) => setSearchServiceQuery(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 focus:border-amber-500/40 rounded-lg px-3 py-1.5 text-xs text-white outline-none transition duration-200 w-full sm:w-56 placeholder-slate-600"
+                />
+              ) : (
+                <input
+                  type="text"
+                  placeholder="Product ya category search karein..."
+                  value={searchProductQuery}
+                  onChange={(e) => setSearchProductQuery(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 focus:border-amber-500/40 rounded-lg px-3 py-1.5 text-xs text-white outline-none transition duration-200 w-full sm:w-56 placeholder-slate-600"
+                />
+              )}
             </div>
 
-            {/* List of Services */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
-              {filteredServices.map(service => {
-                const qty = getServiceQuantity(service.id);
-                return (
-                  <div
-                    key={service.id}
-                    className={`p-3 rounded-xl border flex justify-between items-center gap-3 transition duration-200 group relative ${
-                      qty > 0
-                        ? "border-amber-500 bg-amber-500/5 text-amber-400"
-                        : "border-slate-800/80 hover:border-slate-700 bg-slate-950/40 text-slate-300"
-                    }`}
-                  >
-                    {/* Clickable Area to Add/Increment Service */}
-                    <div 
-                      onClick={() => handleToggleService(service)}
-                      className="space-y-0.5 min-w-0 flex-grow cursor-pointer select-none"
-                    >
-                      <span className="text-xs font-bold block text-white truncate group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
-                        {service.name}
-                        {qty > 0 && (
-                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                            x{qty}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-medium">
-                        {service.category}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <div className="text-right">
-                        <span className="text-xs font-mono font-bold text-amber-400 block">Rs. {service.price}</span>
-                        <span className="text-[9px] text-slate-500">{service.durationMin} mins</span>
-                      </div>
-
-                      {/* Direct Quantity Adjuster on the Card */}
-                      {qty > 0 ? (
-                        <div className="flex items-center bg-slate-950/85 border border-slate-800 rounded-lg p-0.5 ml-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveServiceInstance(service.id);
-                            }}
-                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <span className="px-1.5 text-[11px] font-bold text-white font-mono">{qty}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleService(service);
-                            }}
-                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
+            {/* List View Container */}
+            {pickerTab === "services" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
+                {filteredServices.length > 0 ? (
+                  filteredServices.map(service => {
+                    const qty = getServiceQuantity(service.id);
+                    return (
+                      <div
+                        key={service.id}
+                        className={`p-3 rounded-xl border flex justify-between items-center gap-3 transition duration-200 group relative ${
+                          qty > 0
+                            ? "border-amber-500 bg-amber-500/5 text-amber-400"
+                            : "border-slate-800/80 hover:border-slate-700 bg-slate-950/40 text-slate-300"
+                        }`}
+                      >
+                        <div 
                           onClick={() => handleToggleService(service)}
-                          className="p-1 bg-slate-900 border border-slate-800 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 rounded-lg transition cursor-pointer"
-                          title="Add Service"
+                          className="space-y-0.5 min-w-0 flex-grow cursor-pointer select-none"
                         >
-                          <span className="text-xs font-bold px-1">+ Add</span>
-                        </button>
-                      )}
-                    </div>
+                          <span className="text-xs font-bold block text-white truncate group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                            {service.name}
+                            {qty > 0 && (
+                              <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                                x{qty}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-medium">
+                            {service.category}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            <span className="text-xs font-mono font-bold text-amber-400 block">Rs. {service.price}</span>
+                            <span className="text-[9px] text-slate-500">{service.durationMin} mins</span>
+                          </div>
+
+                          {qty > 0 ? (
+                            <div className="flex items-center bg-slate-950/85 border border-slate-800 rounded-lg p-0.5 ml-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveServiceInstance(service.id);
+                                }}
+                                className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="px-1.5 text-[11px] font-bold text-white font-mono">{qty}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleService(service);
+                                }}
+                                className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleService(service)}
+                              className="p-1 bg-slate-900 border border-slate-800 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 rounded-lg transition cursor-pointer"
+                              title="Add Service"
+                            >
+                              <span className="text-xs font-bold px-1">+ Add</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-2 text-center py-8 text-slate-500 text-xs italic">
+                    Koi service nahi mili.
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
+                {filteredProducts.length > 0 ? (
+                  filteredProducts.map(product => {
+                    const qty = getProductQuantity(product.id);
+                    const inStock = product.stock > 0;
+                    return (
+                      <div
+                        key={product.id}
+                        className={`p-3 rounded-xl border flex justify-between items-center gap-3 transition duration-200 group relative ${
+                          qty > 0
+                            ? "border-amber-500 bg-amber-500/5 text-amber-400"
+                            : "border-slate-800/80 hover:border-slate-700 bg-slate-950/40 text-slate-300"
+                        } ${!inStock ? "opacity-50" : ""}`}
+                      >
+                        <div 
+                          onClick={() => inStock && handleToggleProduct(product)}
+                          className={`space-y-0.5 min-w-0 flex-grow ${inStock ? "cursor-pointer" : "cursor-not-allowed"} select-none`}
+                        >
+                          <span className="text-xs font-bold block text-white truncate group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                            {product.name}
+                            {qty > 0 && (
+                              <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                                x{qty}
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-medium">
+                              {product.category}
+                            </span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${product.stock <= 5 ? "bg-rose-950/30 text-rose-400" : "bg-slate-800 text-slate-400"}`}>
+                              Stock: {product.stock}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            <span className="text-xs font-mono font-bold text-amber-400 block">Rs. {product.price}</span>
+                          </div>
+
+                          {!inStock ? (
+                            <span className="text-[10px] bg-rose-500/10 text-rose-400 font-bold px-2 py-1 rounded-lg border border-rose-500/20">
+                              Out of stock
+                            </span>
+                          ) : qty > 0 ? (
+                            <div className="flex items-center bg-slate-950/85 border border-slate-800 rounded-lg p-0.5 ml-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveProductInstance(product.id);
+                                }}
+                                className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="px-1.5 text-[11px] font-bold text-white font-mono">{qty}</span>
+                              <button
+                                type="button"
+                                disabled={qty >= product.stock}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleProduct(product);
+                                }}
+                                className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleProduct(product)}
+                              className="p-1 bg-slate-900 border border-slate-800 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 rounded-lg transition cursor-pointer"
+                              title="Add Product"
+                            >
+                              <span className="text-xs font-bold px-1">+ Add</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-2 text-center py-8 text-slate-500 text-xs italic">
+                    Koi product nahi mila.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </form>
       </div>
@@ -416,56 +611,112 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
             Bill & Checkout Summary
           </h3>
 
-          {/* Selected Services Receipt List */}
-          <div className="space-y-2.5 min-h-[140px] max-h-[220px] overflow-y-auto pr-1">
-            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Kiya Jane Wala Kaam (Services Summary)</h4>
-            {selectedServices.length > 0 ? (
-              <div className="space-y-1.5">
-                {groupedSelectedServices.map(item => (
-                  <div key={item.service.id} className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60 text-xs">
-                    <div className="min-w-0 flex-grow">
-                      <span className="text-slate-200 font-medium block truncate">{item.service.name}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">Rs. {item.service.price} x {item.quantity}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Quantity Incrementor Controls */}
-                      <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+          {/* Selected Items Lists (Services and Products) */}
+          <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
+            {/* Selected Services */}
+            <div className="space-y-2">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Kiya Jane Wala Kaam (Services Summary)</h4>
+              {selectedServices.length > 0 ? (
+                <div className="space-y-1.5">
+                  {groupedSelectedServices.map(item => (
+                    <div key={item.service.id} className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60 text-xs">
+                      <div className="min-w-0 flex-grow">
+                        <span className="text-slate-200 font-medium block truncate">{item.service.name}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Rs. {item.service.price} x {item.quantity}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Quantity Incrementor Controls */}
+                        <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveServiceInstance(item.service.id)}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="px-1.5 text-xs font-bold text-white font-mono">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleService(item.service)}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <span className="font-mono text-amber-400 font-semibold w-16 text-right">Rs. {(item.service.price * item.quantity).toLocaleString()}</span>
+                        
                         <button
                           type="button"
-                          onClick={() => handleRemoveServiceInstance(item.service.id)}
-                          className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                          onClick={() => handleRemoveAllInstances(item.service.id)}
+                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-md hover:bg-rose-500/10 transition-colors ml-1 cursor-pointer"
+                          title="Remove all"
                         >
-                          -
-                        </button>
-                        <span className="px-1.5 text-xs font-bold text-white font-mono">{item.quantity}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleService(item.service)}
-                          className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
-                        >
-                          +
+                          <Trash2 size={13} />
                         </button>
                       </div>
-
-                      <span className="font-mono text-amber-400 font-semibold w-16 text-right">Rs. {(item.service.price * item.quantity).toLocaleString()}</span>
-                      
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAllInstances(item.service.id)}
-                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded-md hover:bg-rose-500/10 transition-colors ml-1 cursor-pointer"
-                        title="Remove all"
-                      >
-                        <Trash2 size={13} />
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-6 bg-slate-950/40 border border-dashed border-slate-800 rounded-xl text-center text-xs text-slate-500">
-                Koi service abhi select nahi ki gayi. Left side se choose karein.
-              </div>
-            )}
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-xl text-center text-[11px] text-slate-500">
+                  Koi service abhi select nahi ki gayi.
+                </div>
+              )}
+            </div>
+
+            {/* Selected Products */}
+            <div className="space-y-2">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Kareeday Gaye Products (Products Summary)</h4>
+              {selectedProducts.length > 0 ? (
+                <div className="space-y-1.5">
+                  {groupedSelectedProducts.map(item => (
+                    <div key={item.product.id} className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60 text-xs">
+                      <div className="min-w-0 flex-grow">
+                        <span className="text-slate-200 font-medium block truncate">{item.product.name}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Rs. {item.product.price} x {item.quantity}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Quantity Incrementor Controls */}
+                        <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProductInstance(item.product.id)}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="px-1.5 text-xs font-bold text-white font-mono">{item.quantity}</span>
+                          <button
+                            type="button"
+                            disabled={item.quantity >= (products.find(p => p.id === item.product.id)?.stock || 0)}
+                            onClick={() => handleToggleProduct(item.product)}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer disabled:opacity-30"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <span className="font-mono text-amber-400 font-semibold w-16 text-right">Rs. {(item.product.price * item.quantity).toLocaleString()}</span>
+                        
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAllProductInstances(item.product.id)}
+                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-md hover:bg-rose-500/10 transition-colors ml-1 cursor-pointer"
+                          title="Remove all"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-xl text-center text-[11px] text-slate-500">
+                  Koi product abhi select nahi kiya gaya.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Section 3: Staff Assignment */}
@@ -554,7 +805,10 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
           <div className="bg-slate-950/80 rounded-2xl p-4 border border-slate-800 space-y-2 mt-4">
             <div className="flex justify-between items-center text-xs">
               <span className="text-slate-400">Total Items:</span>
-              <span className="text-slate-200 font-mono font-medium">{selectedServices.length} Services</span>
+              <span className="text-slate-200 font-mono font-medium">
+                {selectedServices.length} {selectedServices.length === 1 ? 'Service' : 'Services'}
+                {selectedProducts.length > 0 && ` & ${selectedProducts.length} ${selectedProducts.length === 1 ? 'Product' : 'Products'}`}
+              </span>
             </div>
             <div className="flex justify-between items-center text-xs border-b border-slate-800/60 pb-2">
               <span className="text-slate-400">Tax/GSTR:</span>

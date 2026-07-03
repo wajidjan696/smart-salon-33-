@@ -30,9 +30,10 @@ import { motion, AnimatePresence } from "motion/react";
 
 interface ProductsManagerProps {
   staff: StaffMember[];
+  onProductsUpdated?: () => void;
 }
 
-export default function ProductsManager({ staff }: ProductsManagerProps) {
+export default function ProductsManager({ staff, onProductsUpdated }: ProductsManagerProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<ProductSale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,7 @@ export default function ProductsManager({ staff }: ProductsManagerProps) {
       const saleList = await getProductSales();
       setProducts(prodList);
       setSales(saleList);
+      onProductsUpdated?.();
     } catch (err) {
       console.error(err);
     } finally {
