@@ -78,14 +78,27 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
     e.preventDefault();
     setFormError("");
 
-    if (!clientName.trim()) {
-      setFormError("Client ka naam likhna zaroori hai.");
-      return;
+    let finalClientName = clientName.trim();
+    let finalClientPhone = clientPhone.trim();
+
+    if (paymentStatus === "unpaid") {
+      if (!finalClientName) {
+        setFormError("Khata (Udhaar) register karne ke liye Client ka Naam likhna zaroori hai!");
+        return;
+      }
+      if (!finalClientPhone) {
+        setFormError("Khata (Udhaar) register karne ke liye Phone Number zaroori hai!");
+        return;
+      }
+    } else {
+      if (!finalClientName) {
+        finalClientName = "Walk-In Client";
+      }
+      if (!finalClientPhone) {
+        finalClientPhone = "0000000000";
+      }
     }
-    if (!clientPhone.trim()) {
-      setFormError("Client ka phone number likhna zaroori hai.");
-      return;
-    }
+
     if (selectedServices.length === 0) {
       setFormError("Kam se kam ek Service select karein.");
       return;
@@ -104,8 +117,8 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       if (editingBooking) {
         const updatedBooking: Booking = {
           ...editingBooking,
-          clientName: clientName.trim(),
-          clientPhone: clientPhone.trim(),
+          clientName: finalClientName,
+          clientPhone: finalClientPhone,
           services: selectedServices,
           staffId: selectedStaffId,
           staffName,
@@ -133,8 +146,8 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       const bookingId = `b-${Date.now()}`;
       const newBooking: Booking = {
         id: bookingId,
-        clientName: clientName.trim(),
-        clientPhone: clientPhone.trim(),
+        clientName: finalClientName,
+        clientPhone: finalClientPhone,
         bookingType: "appointment",
         services: selectedServices,
         staffId: selectedStaffId,
@@ -152,12 +165,12 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
 
       // Log in Khata Book if payment is Unpaid/Khata
       if (paymentStatus === "unpaid") {
-        const khataId = `khata-client-${clientPhone.trim()}`;
+        const khataId = `khata-client-${finalClientPhone}`;
         const newKhata: KhataAccount = {
           id: khataId,
-          name: clientName.trim(),
+          name: finalClientName,
           type: "client",
-          phone: clientPhone.trim(),
+          phone: finalClientPhone,
           balance: totalAmount,
           lastUpdated: new Date().toISOString()
         };
@@ -166,7 +179,7 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
         const khataLog: KhataLog = {
           id: `klog-${Date.now()}`,
           accountId: khataId,
-          accountName: clientName.trim(),
+          accountName: finalClientName,
           amount: totalAmount,
           type: "debit",
           description: `Appointment: ${selectedServices.map(s => s.name).join(", ")}`,
@@ -193,12 +206,24 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
   };
 
   const handleToggleFormService = (service: SalonService) => {
-    const isSelected = selectedServices.some(s => s.id === service.id);
-    if (isSelected) {
-      setSelectedServices(selectedServices.filter(s => s.id !== service.id));
-    } else {
-      setSelectedServices([...selectedServices, service]);
+    setSelectedServices([...selectedServices, service]);
+  };
+
+  const handleRemoveFormServiceInstance = (serviceId: string) => {
+    const idx = selectedServices.findIndex(s => s.id === serviceId);
+    if (idx > -1) {
+      const updated = [...selectedServices];
+      updated.splice(idx, 1);
+      setSelectedServices(updated);
     }
+  };
+
+  const handleRemoveAllFormInstances = (serviceId: string) => {
+    setSelectedServices(selectedServices.filter(s => s.id !== serviceId));
+  };
+
+  const getFormServiceQuantity = (serviceId: string) => {
+    return selectedServices.filter(s => s.id === serviceId).length;
   };
 
   // Filter Bookings logic
@@ -513,22 +538,20 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
                 {/* Client Info */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1.5">
-                    <label className="text-xs text-slate-400 font-bold uppercase tracking-tight">Client Name *</label>
+                    <label className="text-xs text-slate-400 font-bold uppercase tracking-tight">Client Name <span className="text-[10px] text-slate-500 font-normal lowercase">(optional)</span></label>
                     <input
                       type="text"
-                      required
-                      placeholder="Client ka naam"
+                      placeholder="Client ka naam (Optional)"
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-600 outline-none"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs text-slate-400 font-bold uppercase tracking-tight">Client Phone *</label>
+                    <label className="text-xs text-slate-400 font-bold uppercase tracking-tight">Client Phone <span className="text-[10px] text-slate-500 font-normal lowercase">(optional)</span></label>
                     <input
                       type="tel"
-                      required
-                      placeholder="Phone (0300...)"
+                      placeholder="Phone e.g. 03001234567"
                       value={clientPhone}
                       onChange={(e) => setClientPhone(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-600 outline-none font-mono"
@@ -622,21 +645,50 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
                     {services
                       .filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()))
                       .map((service) => {
-                        const isChecked = selectedServices.some(s => s.id === service.id);
+                        const qty = getFormServiceQuantity(service.id);
                         return (
                           <div
                             key={service.id}
-                            onClick={() => handleToggleFormService(service)}
-                            className="flex items-center justify-between p-2 hover:bg-slate-900/40 rounded-lg cursor-pointer transition text-xs"
+                            className="flex items-center justify-between p-2 hover:bg-slate-900/40 rounded-lg text-xs select-none"
                           >
-                            <span className="text-slate-300 font-medium">{service.name}</span>
+                            <span className="text-slate-300 font-medium flex items-center gap-1.5 cursor-pointer" onClick={() => handleToggleFormService(service)}>
+                              {service.name}
+                              {qty > 0 && (
+                                <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                                  x{qty}
+                                </span>
+                              )}
+                            </span>
                             <div className="flex items-center gap-2">
                               <span className="text-amber-400 font-bold font-mono">Rs. {service.price}</span>
-                              <div className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center transition-colors ${
-                                isChecked ? "bg-amber-500 border-amber-500 text-slate-950" : "border-slate-800"
-                              }`}>
-                                {isChecked && <Check size={11} className="stroke-[3]" />}
-                              </div>
+                              
+                              {qty > 0 ? (
+                                <div className="flex items-center bg-slate-900 border border-slate-850 rounded-lg p-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFormServiceInstance(service.id)}
+                                    className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="px-1 text-[10px] font-bold text-white font-mono">{qty}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleFormService(service)}
+                                    className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleFormService(service)}
+                                  className="px-2 py-0.5 bg-slate-900 border border-slate-800 hover:border-amber-500/20 text-slate-400 hover:text-amber-400 rounded-md transition text-[10px] font-bold cursor-pointer"
+                                >
+                                  + Add
+                                </button>
+                              )}
                             </div>
                           </div>
                         );

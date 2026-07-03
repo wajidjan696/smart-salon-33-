@@ -51,15 +51,38 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
     s.category.toLowerCase().includes(searchServiceQuery.toLowerCase())
   );
 
-  // Toggle Service selection
+  // Toggle Service selection - now always appends to allow duplicates (multiple selections/quantities)
   const handleToggleService = (service: SalonService) => {
-    const isSelected = selectedServices.some(s => s.id === service.id);
-    if (isSelected) {
-      setSelectedServices(selectedServices.filter(s => s.id !== service.id));
-    } else {
-      setSelectedServices([...selectedServices, service]);
+    setSelectedServices([...selectedServices, service]);
+  };
+
+  const handleRemoveServiceInstance = (serviceId: string) => {
+    const idx = selectedServices.findIndex(s => s.id === serviceId);
+    if (idx > -1) {
+      const updated = [...selectedServices];
+      updated.splice(idx, 1);
+      setSelectedServices(updated);
     }
   };
+
+  const handleRemoveAllInstances = (serviceId: string) => {
+    setSelectedServices(selectedServices.filter(s => s.id !== serviceId));
+  };
+
+  const getServiceQuantity = (serviceId: string) => {
+    return selectedServices.filter(s => s.id === serviceId).length;
+  };
+
+  // Group selected services to display quantities
+  const groupedSelectedServices = selectedServices.reduce((acc: { service: SalonService; quantity: number }[], service) => {
+    const existing = acc.find(item => item.service.id === service.id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      acc.push({ service, quantity: 1 });
+    }
+    return acc;
+  }, []);
 
   // Calculate Subtotal
   const totalAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
@@ -69,21 +92,34 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
     e.preventDefault();
     setError("");
 
+    let finalClientName = clientName.trim();
+    let finalClientPhone = clientPhone.trim();
+
     // Validate inputs
-    if (!clientName.trim()) {
-      setError("Meharbani karke Client ka naam likhein!");
-      return;
+    if (paymentStatus === "unpaid") {
+      if (!finalClientName) {
+        setError("Khata (Udhaar) register karne ke liye Client ka Naam likhna zaroori hai!");
+        return;
+      }
+      if (!finalClientPhone) {
+        setError("Khata (Udhaar) register karne ke liye Phone Number likhna zaroori hai!");
+        return;
+      }
+    } else {
+      if (!finalClientName) {
+        finalClientName = "Walk-In Client";
+      }
+      if (!finalClientPhone) {
+        finalClientPhone = "0000000000";
+      }
     }
-    if (!clientPhone.trim()) {
-      setError("Meharbani karke Client ka phone number likhein!");
-      return;
-    }
+
     if (selectedServices.length === 0) {
       setError("Meharbani karke kam se kam ek Service zaroor choose karein!");
       return;
     }
     if (!selectedStaffId) {
-      setError("Meharbani karke Stylist (Staff member) select karein jisne kaam kiya!");
+      setError("Meharbani karke Stylist (Staff member) select karein zaroor!");
       return;
     }
 
@@ -96,8 +132,8 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
 
       const newBooking: Booking = {
         id: `b-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        clientName: clientName.trim(),
-        clientPhone: clientPhone.trim(),
+        clientName: finalClientName,
+        clientPhone: finalClientPhone,
         bookingType,
         services: selectedServices,
         staffId: selectedStaffId,
@@ -116,12 +152,12 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
 
       // Automatically register client dues in Khata Book if payment is unpaid (not received / khata)
       if (paymentStatus === "unpaid") {
-        const khataId = `khata-client-${clientPhone.trim()}`;
+        const khataId = `khata-client-${finalClientPhone}`;
         const newKhata: KhataAccount = {
           id: khataId,
-          name: clientName.trim(),
+          name: finalClientName,
           type: "client",
-          phone: clientPhone.trim(),
+          phone: finalClientPhone,
           balance: totalAmount,
           lastUpdated: new Date().toISOString()
         };
@@ -130,7 +166,7 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
         const khataLog: KhataLog = {
           id: `klog-${Date.now()}`,
           accountId: khataId,
-          accountName: clientName.trim(),
+          accountName: finalClientName,
           amount: totalAmount,
           type: "debit",
           description: `POS Bill: ${selectedServices.map(s => s.name).join(", ")}`,
@@ -194,13 +230,12 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 font-medium">Client Ka Name *</label>
+                <label className="text-xs text-slate-400 font-medium">Client Ka Name <span className="text-[10px] text-slate-500 font-normal">(Optional)</span></label>
                 <div className="relative">
                   <User size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
                   <input
                     type="text"
-                    required
-                    placeholder="Maslan: Kamran Khan"
+                    placeholder="Maslan: Kamran Khan (Khali chor sakte hain)"
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 outline-none transition duration-200"
@@ -209,13 +244,12 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 font-medium">Phone Number *</label>
+                <label className="text-xs text-slate-400 font-medium">Phone Number <span className="text-[10px] text-slate-500 font-normal">(Optional)</span></label>
                 <div className="relative">
                   <Phone size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
                   <input
                     type="tel"
-                    required
-                    placeholder="Maslan: 03001234567"
+                    placeholder="Maslan: 03001234567 (Khali chor sakte hain)"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 outline-none transition duration-200"
@@ -293,31 +327,77 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
             {/* List of Services */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
               {filteredServices.map(service => {
-                const isSelected = selectedServices.some(s => s.id === service.id);
+                const qty = getServiceQuantity(service.id);
                 return (
-                  <button
+                  <div
                     key={service.id}
-                    type="button"
-                    onClick={() => handleToggleService(service)}
-                    className={`p-3 rounded-xl border text-left flex justify-between items-center gap-3 transition duration-200 group ${
-                      isSelected
+                    className={`p-3 rounded-xl border flex justify-between items-center gap-3 transition duration-200 group relative ${
+                      qty > 0
                         ? "border-amber-500 bg-amber-500/5 text-amber-400"
                         : "border-slate-800/80 hover:border-slate-700 bg-slate-950/40 text-slate-300"
                     }`}
                   >
-                    <div className="space-y-0.5 min-w-0">
-                      <span className="text-xs font-bold block text-white truncate group-hover:text-amber-400 transition-colors">
+                    {/* Clickable Area to Add/Increment Service */}
+                    <div 
+                      onClick={() => handleToggleService(service)}
+                      className="space-y-0.5 min-w-0 flex-grow cursor-pointer select-none"
+                    >
+                      <span className="text-xs font-bold block text-white truncate group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
                         {service.name}
+                        {qty > 0 && (
+                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                            x{qty}
+                          </span>
+                        )}
                       </span>
                       <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-medium">
                         {service.category}
                       </span>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className="text-xs font-mono font-bold text-amber-400 block">Rs. {service.price}</span>
-                      <span className="text-[9px] text-slate-500">{service.durationMin} mins</span>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <span className="text-xs font-mono font-bold text-amber-400 block">Rs. {service.price}</span>
+                        <span className="text-[9px] text-slate-500">{service.durationMin} mins</span>
+                      </div>
+
+                      {/* Direct Quantity Adjuster on the Card */}
+                      {qty > 0 ? (
+                        <div className="flex items-center bg-slate-950/85 border border-slate-800 rounded-lg p-0.5 ml-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveServiceInstance(service.id);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="px-1.5 text-[11px] font-bold text-white font-mono">{qty}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleService(service);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition font-bold cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleService(service)}
+                          className="p-1 bg-slate-900 border border-slate-800 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 rounded-lg transition cursor-pointer"
+                          title="Add Service"
+                        >
+                          <span className="text-xs font-bold px-1">+ Add</span>
+                        </button>
+                      )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -341,18 +421,39 @@ export default function PosBilling({ services, staff, onBookingAdded }: PosBilli
             <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Kiya Jane Wala Kaam (Services Summary)</h4>
             {selectedServices.length > 0 ? (
               <div className="space-y-1.5">
-                {selectedServices.map(s => (
-                  <div key={s.id} className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60 text-xs">
-                    <div className="min-w-0">
-                      <span className="text-slate-200 font-medium block truncate">{s.name}</span>
-                      <span className="text-[10px] text-slate-500">{s.category}</span>
+                {groupedSelectedServices.map(item => (
+                  <div key={item.service.id} className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60 text-xs">
+                    <div className="min-w-0 flex-grow">
+                      <span className="text-slate-200 font-medium block truncate">{item.service.name}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">Rs. {item.service.price} x {item.quantity}</span>
                     </div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-mono text-amber-400 font-semibold">Rs. {s.price}</span>
+                    <div className="flex items-center gap-2">
+                      {/* Quantity Incrementor Controls */}
+                      <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveServiceInstance(item.service.id)}
+                          className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="px-1.5 text-xs font-bold text-white font-mono">{item.quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleService(item.service)}
+                          className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white rounded transition font-bold cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <span className="font-mono text-amber-400 font-semibold w-16 text-right">Rs. {(item.service.price * item.quantity).toLocaleString()}</span>
+                      
                       <button
                         type="button"
-                        onClick={() => setSelectedServices(selectedServices.filter(item => item.id !== s.id))}
-                        className="text-slate-500 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-colors"
+                        onClick={() => handleRemoveAllInstances(item.service.id)}
+                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded-md hover:bg-rose-500/10 transition-colors ml-1 cursor-pointer"
+                        title="Remove all"
                       >
                         <Trash2 size={13} />
                       </button>
