@@ -1,0 +1,6 @@
+{
+  "name": "Smart Salon 33",
+  "description": "A comprehensive salon management platform for tracking appointments, services, payments (Cash, EasyPaisa, JazzCash, Bank Transfer, Online), staff leaves, and performance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
