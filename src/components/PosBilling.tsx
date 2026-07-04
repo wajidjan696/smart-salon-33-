@@ -13,7 +13,8 @@ import {
   DollarSign, 
   Trash2,
   Wallet,
-  ShoppingBag
+  ShoppingBag,
+  Clock
 } from "lucide-react";
 
 interface PosBillingProps {
@@ -250,6 +251,11 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
       setSelectedStaffId("");
       setPaymentMethod("cash");
       setPaymentStatus("paid");
+      setDate(new Date().toISOString().split('T')[0]);
+      setTime(() => {
+        const now = new Date();
+        return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      });
       
       setTimeout(() => {
         setSuccess(false);
@@ -316,6 +322,37 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder-slate-600 outline-none transition duration-200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Date and Time Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-slate-800/40">
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-medium">Kaam Ki Tareeq (Booking Date) *</label>
+                <div className="relative font-mono">
+                  <Calendar size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
+                  <input
+                    type="date"
+                    required
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-3 pl-10 pr-4 text-xs text-white outline-none transition duration-200"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-medium">Kaam Ka Waqt (Booking Time) *</label>
+                <div className="relative font-mono">
+                  <Clock size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
+                  <input
+                    type="time"
+                    required
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-3 pl-10 pr-4 text-xs text-white outline-none transition duration-200"
                   />
                 </div>
               </div>

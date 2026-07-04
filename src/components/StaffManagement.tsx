@@ -56,11 +56,30 @@ export default function StaffManagement({
     loadAttendance();
   }, []);
 
+  const autoDetectStatus = (inputTime: string, staffExpectedTime?: string) => {
+    if (!inputTime) return "on_time";
+    const expected = staffExpectedTime || "10:00";
+    // Compare hours and minutes directly
+    const [inH, inM] = inputTime.split(":").map(Number);
+    const [expH, expM] = expected.split(":").map(Number);
+    if (inH > expH || (inH === expH && inM > expM)) {
+      return "late";
+    }
+    return "on_time";
+  };
+
+  const handleCheckInTimeChange = (newTime: string, staffExpectedTime?: string) => {
+    setCheckInTime(newTime);
+    const status = autoDetectStatus(newTime, staffExpectedTime);
+    setCheckInStatus(status);
+  };
+
   const handleOpenCheckIn = (member: StaffMember) => {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     setCheckInTime(timeStr);
-    setCheckInStatus(now.getHours() >= 10 ? "late" : "on_time");
+    const status = autoDetectStatus(timeStr, member.startTime);
+    setCheckInStatus(status);
     setAttendanceNotes("");
     setShowCheckInModal(member);
   };
@@ -135,6 +154,7 @@ export default function StaffManagement({
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("Junior Stylist");
   const [joinedDate, setJoinedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startTime, setStartTime] = useState("10:00");
 
   // UI state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -169,7 +189,8 @@ export default function StaffManagement({
           phone: phone.trim(),
           role,
           joinedDate,
-          status: existingMember ? existingMember.status : "active"
+          status: existingMember ? existingMember.status : "active",
+          startTime
         };
         await updateStaff(updatedMember);
         setEditingStaffId(null);
@@ -181,7 +202,8 @@ export default function StaffManagement({
           phone: phone.trim(),
           role,
           joinedDate,
-          status: "active"
+          status: "active",
+          startTime
         };
         await addStaff(newStaff);
       }
@@ -190,6 +212,7 @@ export default function StaffManagement({
       setName("");
       setPhone("");
       setRole("Junior Stylist");
+      setStartTime("10:00");
       setSuccess(true);
       onStaffAdded();
 
@@ -212,6 +235,7 @@ export default function StaffManagement({
     setPhone(member.phone);
     setRole(member.role);
     setJoinedDate(member.joinedDate);
+    setStartTime(member.startTime || "10:00");
     setShowAddForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -304,6 +328,7 @@ export default function StaffManagement({
               setName("");
               setPhone("");
               setRole("Junior Stylist");
+              setStartTime("10:00");
             }
             setShowAddForm(!showAddForm);
           }}
@@ -341,7 +366,7 @@ export default function StaffManagement({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400 font-medium">Poora Naam (Full Name)</label>
                   <input
@@ -390,6 +415,20 @@ export default function StaffManagement({
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400 font-medium font-bold">Duty Ka Waqt (Shift Start Time) *</label>
+                  <input
+                    type="time"
+                    required
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono font-bold text-amber-400"
+                  />
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    * Har karkun ki alag timing yahan set karein. Attendance lagate waqt agar is waqt se late hue, to system khud hi "Late" detect kar lega!
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end pt-2 gap-3">
@@ -401,6 +440,7 @@ export default function StaffManagement({
                       setName("");
                       setPhone("");
                       setRole("Junior Stylist");
+                      setStartTime("10:00");
                       setShowAddForm(false);
                     }}
                     className="bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold py-2.5 px-5 rounded-xl border border-slate-700/60 transition"
@@ -620,6 +660,10 @@ export default function StaffManagement({
                       )}
                     </h3>
                     <p className="text-xs text-amber-400 font-semibold">{member.role}</p>
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400 font-medium font-mono">
+                      <Clock size={10} className="text-amber-500/80" />
+                      <span>Shift Start: {member.startTime || "10:00"}</span>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -754,7 +798,10 @@ export default function StaffManagement({
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-850">
                   <span className="text-slate-500 block">Karkun / Staff Name:</span>
                   <span className="text-white text-sm font-bold block mt-0.5">{showCheckInModal.name}</span>
-                  <span className="text-[10px] text-slate-400">{showCheckInModal.role}</span>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-[10px] text-slate-400">{showCheckInModal.role}</span>
+                    <span className="text-[10px] text-amber-500 font-mono font-bold">Shift Start: {showCheckInModal.startTime || "10:00"}</span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -763,7 +810,7 @@ export default function StaffManagement({
                     <input
                       type="time"
                       value={checkInTime}
-                      onChange={(e) => setCheckInTime(e.target.value)}
+                      onChange={(e) => handleCheckInTimeChange(e.target.value, showCheckInModal.startTime)}
                       className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3.5 text-white outline-none font-mono"
                     />
                   </div>

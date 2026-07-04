@@ -5,6 +5,7 @@ export interface StaffMember {
   role: string;
   joinedDate: string;
   status: "active" | "inactive";
+  startTime?: string; // Expected arrival time, e.g. "10:00" (24h format)
 }
 
 export interface StaffLeave {

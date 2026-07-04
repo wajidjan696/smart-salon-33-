@@ -64,6 +64,24 @@ export default function DashboardOverview({
   const [savingReport, setSavingReport] = useState(false);
   const [viewingArchive, setViewingArchive] = useState<MonthlyArchive | null>(null);
 
+  // Selected ledger date for daily entries (Defaults to local today's date)
+  const [dashboardDate, setDashboardDate] = useState(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
+
+  const getFormattedDashboardDate = (dateStr: string) => {
+    try {
+      const parts = dateStr.split("-");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      return d.toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
   // Today's Bookings list states
   const [todayFilter, setTodayFilter] = useState<"all" | "appointment" | "walk_in">("all");
 
@@ -355,45 +373,58 @@ export default function DashboardOverview({
 
       {/* Today's Appointments & Bookings Desk (Aaj ke Appointments) */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div className="space-y-1">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Calendar className="text-amber-500 animate-pulse animate-duration-1000" size={20} />
-              Aaj Ke Appointments Ledger (Today's Scheduled Clients)
+              Appointments & Billing Ledger (Dukan Ka Daily Record)
             </h2>
             <p className="text-slate-400 text-xs">
-              Aaj ki tareeq: <span className="font-mono text-amber-400 font-semibold">{new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>. Aaj ke schedule appointments aur billing entries yahan dekhein.
+              Selected Date: <span className="font-mono text-amber-400 font-bold">{getFormattedDashboardDate(dashboardDate)}</span>. Kisi bhi din ka data dekhne ya naya lagane ke liye date badlein.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-center">
-            <span className="text-[10px] text-slate-500 uppercase font-bold">Filter:</span>
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                onClick={() => setTodayFilter("all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${todayFilter === "all" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
-              >
-                Sab Record ({bookings.filter(b => b.date === new Date().toISOString().split('T')[0]).length})
-              </button>
-              <button
-                onClick={() => setTodayFilter("appointment")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${todayFilter === "appointment" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
-              >
-                Sirf Appointments ({bookings.filter(b => b.date === new Date().toISOString().split('T')[0] && b.bookingType === "appointment").length})
-              </button>
-              <button
-                onClick={() => setTodayFilter("walk_in")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${todayFilter === "walk_in" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
-              >
-                Walk-ins ({bookings.filter(b => b.date === new Date().toISOString().split('T')[0] && b.bookingType === "walk_in").length})
-              </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Custom Date Picker */}
+            <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 border border-slate-850 rounded-xl">
+              <span className="text-[10px] text-slate-500 uppercase font-bold whitespace-nowrap">Choose Date:</span>
+              <input
+                type="date"
+                value={dashboardDate}
+                onChange={(e) => setDashboardDate(e.target.value)}
+                className="bg-transparent text-xs text-amber-400 outline-none font-bold font-mono border-none p-0 cursor-pointer focus:ring-0"
+              />
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 uppercase font-bold">Type:</span>
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-850">
+                <button
+                  onClick={() => setTodayFilter("all")}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${todayFilter === "all" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
+                >
+                  Sab ({bookings.filter(b => b.date === dashboardDate).length})
+                </button>
+                <button
+                  onClick={() => setTodayFilter("appointment")}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${todayFilter === "appointment" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
+                >
+                  Appointments ({bookings.filter(b => b.date === dashboardDate && b.bookingType === "appointment").length})
+                </button>
+                <button
+                  onClick={() => setTodayFilter("walk_in")}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${todayFilter === "walk_in" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"}`}
+                >
+                  Walk-ins ({bookings.filter(b => b.date === dashboardDate && b.bookingType === "walk_in").length})
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {(() => {
-          const tDate = new Date().toISOString().split('T')[0];
-          const todayBList = bookings.filter(b => b.date === tDate);
+          const todayBList = bookings.filter(b => b.date === dashboardDate);
           const filteredTodayBList = todayBList.filter(b => {
             if (todayFilter === "all") return true;
             return b.bookingType === todayFilter;

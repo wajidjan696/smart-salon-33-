@@ -37,6 +37,12 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
 
+  // Date-based filter states (advanced filtering)
+  const [dateFilterMode, setDateFilterMode] = useState<"all" | "single_date" | "week" | "month" | "year">("all");
+  const [selectedFilterDate, setSelectedFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedFilterMonth, setSelectedFilterMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0')); // "01"-"12"
+  const [selectedFilterYear, setSelectedFilterYear] = useState(() => String(new Date().getFullYear())); // "2026"
+
   // Appointment Form State
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [clientName, setClientName] = useState("");
@@ -226,6 +232,27 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
     return selectedServices.filter(s => s.id === serviceId).length;
   };
 
+  // Helper to check if two dates belong to the same week (starting on Monday)
+  const isSameWeek = (dateStr1: string, dateStr2: string) => {
+    try {
+      const d1 = new Date(dateStr1);
+      const d2 = new Date(dateStr2);
+      
+      const getMonday = (d: Date) => {
+        const date = new Date(d);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(date.setDate(diff));
+        monday.setHours(0, 0, 0, 0);
+        return monday.getTime();
+      };
+
+      return getMonday(d1) === getMonday(d2);
+    } catch {
+      return false;
+    }
+  };
+
   // Filter Bookings logic
   const filteredBookings = bookings.filter(b => {
     const matchesSearch = 
@@ -236,7 +263,20 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
     const matchesType = typeFilter === "all" || b.bookingType === typeFilter;
     const matchesPayment = paymentFilter === "all" || b.paymentMethod === paymentFilter;
 
-    return matchesSearch && matchesType && matchesPayment;
+    let matchesDate = true;
+    if (dateFilterMode === "single_date") {
+      matchesDate = b.date === selectedFilterDate;
+    } else if (dateFilterMode === "week") {
+      matchesDate = isSameWeek(b.date, selectedFilterDate);
+    } else if (dateFilterMode === "month") {
+      const [bYear, bMonth] = b.date.split("-");
+      matchesDate = bYear === selectedFilterYear && bMonth === selectedFilterMonth;
+    } else if (dateFilterMode === "year") {
+      const [bYear] = b.date.split("-");
+      matchesDate = bYear === selectedFilterYear;
+    }
+
+    return matchesSearch && matchesType && matchesPayment && matchesDate;
   });
 
   // Handle status update
@@ -316,54 +356,183 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       </div>
 
       {/* Filter and Search Panel */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
-        {/* Search bar */}
-        <div className="relative w-full md:w-80">
-          <Search size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Client Name, Phone ya Stylist search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-slate-600 outline-none transition"
-          />
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+          {/* Search bar */}
+          <div className="relative w-full md:w-80">
+            <Search size={15} className="absolute left-3.5 top-3.5 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Client Name, Phone ya Stylist search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-slate-600 outline-none transition"
+            />
+          </div>
+
+          {/* Filter select inputs */}
+          <div className="flex flex-wrap gap-3 w-full md:w-auto">
+            {/* Booking type */}
+            <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full sm:w-auto">
+              <Filter size={12} className="text-amber-500" />
+              <span className="text-[10px] text-slate-500 uppercase font-bold">Type:</span>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="bg-transparent text-xs text-slate-300 outline-none cursor-pointer border-none font-medium p-0"
+              >
+                <option value="all" className="bg-slate-950 text-white">All Bookings</option>
+                <option value="walk_in" className="bg-slate-950 text-white">Walk-In Entries</option>
+                <option value="appointment" className="bg-slate-950 text-white">Appointments</option>
+                <option value="online" className="bg-slate-950 text-white">Online Bookings</option>
+              </select>
+            </div>
+
+            {/* Payment method */}
+            <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full sm:w-auto">
+              <CreditCard size={12} className="text-amber-500" />
+              <span className="text-[10px] text-slate-500 uppercase font-bold">Paid Via:</span>
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="bg-transparent text-xs text-slate-300 outline-none cursor-pointer border-none font-medium p-0"
+              >
+                <option value="all" className="bg-slate-950 text-white">All Payments</option>
+                <option value="cash" className="bg-slate-950 text-white">💵 Cash</option>
+                <option value="easypaisa" className="bg-slate-950 text-white">🟢 EasyPaisa</option>
+                <option value="jazzcash" className="bg-slate-950 text-white">🔴 JazzCash</option>
+                <option value="bank_transfer" className="bg-slate-950 text-white">🏦 Bank Transfer</option>
+                <option value="online" className="bg-slate-950 text-white">💳 Online Card</option>
+              </select>
+            </div>
+          </div>
         </div>
 
-        {/* Filter select inputs */}
-        <div className="flex flex-wrap gap-3 w-full md:w-auto">
-          {/* Booking type */}
-          <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full sm:w-auto">
-            <Filter size={12} className="text-amber-500" />
-            <span className="text-[10px] text-slate-500 uppercase font-bold">Type:</span>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-transparent text-xs text-slate-300 outline-none cursor-pointer border-none font-medium p-0"
+        {/* Date / Period Filters */}
+        <div className="border-t border-slate-800/60 pt-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] text-slate-500 uppercase font-bold mr-2">Miyad (Period):</span>
+            <button
+              onClick={() => setDateFilterMode("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dateFilterMode === "all" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800/40"}`}
             >
-              <option value="all" className="bg-slate-950 text-white">All Bookings</option>
-              <option value="walk_in" className="bg-slate-950 text-white">Walk-In Entries</option>
-              <option value="appointment" className="bg-slate-950 text-white">Appointments</option>
-              <option value="online" className="bg-slate-950 text-white">Online Bookings</option>
-            </select>
+              Hamesha Ka Data (All Time)
+            </button>
+            <button
+              onClick={() => setDateFilterMode("single_date")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dateFilterMode === "single_date" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800/40"}`}
+            >
+              Khas Din (Specific Date)
+            </button>
+            <button
+              onClick={() => setDateFilterMode("week")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dateFilterMode === "week" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800/40"}`}
+            >
+              Hafta (Week's Records)
+            </button>
+            <button
+              onClick={() => setDateFilterMode("month")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dateFilterMode === "month" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800/40"}`}
+            >
+              Mahina (Month's Records)
+            </button>
+            <button
+              onClick={() => setDateFilterMode("year")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dateFilterMode === "year" ? "bg-amber-500 text-slate-950" : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800/40"}`}
+            >
+              Saal (Year's Records)
+            </button>
           </div>
 
-          {/* Payment method */}
-          <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full sm:w-auto">
-            <CreditCard size={12} className="text-amber-500" />
-            <span className="text-[10px] text-slate-500 uppercase font-bold">Paid Via:</span>
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="bg-transparent text-xs text-slate-300 outline-none cursor-pointer border-none font-medium p-0"
-            >
-              <option value="all" className="bg-slate-950 text-white">All Payments</option>
-              <option value="cash" className="bg-slate-950 text-white">💵 Cash</option>
-              <option value="easypaisa" className="bg-slate-950 text-white">🟢 EasyPaisa</option>
-              <option value="jazzcash" className="bg-slate-950 text-white">🔴 JazzCash</option>
-              <option value="bank_transfer" className="bg-slate-950 text-white">🏦 Bank Transfer</option>
-              <option value="online" className="bg-slate-950 text-white">💳 Online Card</option>
-            </select>
-          </div>
+          {/* Conditional inputs based on selected period filter */}
+          <AnimatePresence mode="wait">
+            {(dateFilterMode === "single_date" || dateFilterMode === "week") && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full lg:w-auto"
+              >
+                <span className="text-[10px] text-slate-500 uppercase font-bold whitespace-nowrap">
+                  {dateFilterMode === "single_date" ? "Date Select:" : "Din Select (Hafta):"}
+                </span>
+                <input
+                  type="date"
+                  value={selectedFilterDate}
+                  onChange={(e) => setSelectedFilterDate(e.target.value)}
+                  className="bg-transparent text-xs text-amber-400 outline-none font-bold font-mono border-none p-0 cursor-pointer"
+                />
+              </motion.div>
+            )}
+
+            {dateFilterMode === "month" && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="flex flex-wrap items-center gap-2 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full lg:w-auto"
+              >
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold whitespace-nowrap">Month:</span>
+                  <select
+                    value={selectedFilterMonth}
+                    onChange={(e) => setSelectedFilterMonth(e.target.value)}
+                    className="bg-transparent text-xs text-amber-400 outline-none font-bold border-none p-0 cursor-pointer"
+                  >
+                    <option value="01" className="bg-slate-950 text-white">January</option>
+                    <option value="02" className="bg-slate-950 text-white">February</option>
+                    <option value="03" className="bg-slate-950 text-white">March</option>
+                    <option value="04" className="bg-slate-950 text-white">April</option>
+                    <option value="05" className="bg-slate-950 text-white">May</option>
+                    <option value="06" className="bg-slate-950 text-white">June</option>
+                    <option value="07" className="bg-slate-950 text-white">July</option>
+                    <option value="08" className="bg-slate-950 text-white">August</option>
+                    <option value="09" className="bg-slate-950 text-white">September</option>
+                    <option value="10" className="bg-slate-950 text-white">October</option>
+                    <option value="11" className="bg-slate-950 text-white">November</option>
+                    <option value="12" className="bg-slate-950 text-white">December</option>
+                  </select>
+                </div>
+
+                <div className="h-4 w-[1px] bg-slate-800 hidden sm:block"></div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold whitespace-nowrap">Year:</span>
+                  <select
+                    value={selectedFilterYear}
+                    onChange={(e) => setSelectedFilterYear(e.target.value)}
+                    className="bg-transparent text-xs text-amber-400 outline-none font-bold border-none p-0 cursor-pointer"
+                  >
+                    <option value="2025" className="bg-slate-950 text-white">2025</option>
+                    <option value="2026" className="bg-slate-950 text-white">2026</option>
+                    <option value="2027" className="bg-slate-950 text-white">2027</option>
+                    <option value="2028" className="bg-slate-950 text-white">2028</option>
+                  </select>
+                </div>
+              </motion.div>
+            )}
+
+            {dateFilterMode === "year" && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 border border-slate-800 rounded-xl w-full lg:w-auto"
+              >
+                <span className="text-[10px] text-slate-500 uppercase font-bold whitespace-nowrap">Year:</span>
+                <select
+                  value={selectedFilterYear}
+                  onChange={(e) => setSelectedFilterYear(e.target.value)}
+                  className="bg-transparent text-xs text-amber-400 outline-none font-bold border-none p-0 cursor-pointer"
+                >
+                  <option value="2025" className="bg-slate-950 text-white">2025</option>
+                  <option value="2026" className="bg-slate-950 text-white">2026</option>
+                  <option value="2027" className="bg-slate-950 text-white">2027</option>
+                  <option value="2028" className="bg-slate-950 text-white">2028</option>
+                </select>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
