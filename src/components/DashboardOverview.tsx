@@ -33,7 +33,8 @@ import {
   Check,
   Phone,
   RefreshCw,
-  Edit2
+  Edit2,
+  HeartHandshake
 } from "lucide-react";
 import {
   BarChart,
@@ -215,6 +216,10 @@ export default function DashboardOverview({
   const totalBookingsCount = filteredBookings.length;
   const averageBookingValue = totalBookingsCount > 0 ? Math.round(totalRevenue / totalBookingsCount) : 0;
   const activeStaffCount = staff.filter(s => s.status === "active").length;
+  
+  const totalTips = filteredBookings
+    .filter(b => b.status === "completed")
+    .reduce((sum, b) => sum + (b.tip || 0), 0);
 
   // 2. Payment split data
   const paymentMethods = [
@@ -250,6 +255,31 @@ export default function DashboardOverview({
   }).sort((a, b) => b.Revenue - a.Revenue);
 
   const totalCommissionSum = staffPerformanceData.reduce((sum, s) => sum + s.Commission, 0);
+
+  // 3b. Group tips by staff member on the chosen date (or overall)
+  const staffTipsData = staff.map(member => {
+    const memberBookings = filteredBookings.filter(b => b.staffId === member.id && b.status === "completed");
+    
+    const memberBookingsToday = memberBookings.filter(b => b.date === dashboardDate);
+    const totalTipToday = memberBookingsToday.reduce((sum, b) => sum + (b.tip || 0), 0);
+    const bookingsCountToday = memberBookingsToday.filter(b => (b.tip || 0) > 0).length;
+
+    const totalTipAll = memberBookings.reduce((sum, b) => sum + (b.tip || 0), 0);
+    const bookingsCountAll = memberBookings.filter(b => (b.tip || 0) > 0).length;
+
+    return {
+      id: member.id,
+      name: member.name,
+      role: member.role,
+      tipToday: totalTipToday,
+      countToday: bookingsCountToday,
+      tipAll: totalTipAll,
+      countAll: bookingsCountAll
+    };
+  }).sort((a, b) => b.tipToday - a.tipToday || b.tipAll - a.tipAll);
+
+  const totalTipsTodaySum = staffTipsData.reduce((sum, s) => sum + s.tipToday, 0);
+  const totalTipsAllSum = staffTipsData.reduce((sum, s) => sum + s.tipAll, 0);
 
   // 4. Current Leaves / Absentees
   const todayStr = new Date().toISOString().split('T')[0];
@@ -490,7 +520,7 @@ export default function DashboardOverview({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           {
             title: "Kul Kamai (Revenue)",
@@ -512,6 +542,13 @@ export default function DashboardOverview({
             icon: TrendingUp,
             color: "text-blue-400 bg-blue-500/10 border-blue-500/20",
             desc: "Fil-client average kharcha"
+          },
+          {
+            title: "Kul Tips Received",
+            value: `Rs. ${totalTips.toLocaleString()}`,
+            icon: HeartHandshake,
+            color: "text-rose-400 bg-rose-500/10 border-rose-500/20",
+            desc: "Stylists ko mila kul inaam"
           },
           {
             title: "Active Staff",
@@ -895,6 +932,77 @@ export default function DashboardOverview({
                 </tr>
               )}
             </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Daily Stylist Tips Register (Inaam Book) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <HeartHandshake size={18} className="text-rose-400" />
+              Daily Stylist Tips Ledger (Inaam Book)
+            </h2>
+            <p className="text-slate-400 text-xs">
+              Makhsus tareeq ke mutabiq stylists ko milne wale tips ki maloomat (syncs with dashboard date picker)
+            </p>
+          </div>
+          <div className="flex gap-2 items-center">
+            <div className="bg-slate-950 text-slate-400 border border-slate-800 text-[10px] font-bold px-2.5 py-1 rounded-lg">
+              Tareeq: {getFormattedDashboardDate(dashboardDate)}
+            </div>
+            <div className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-mono font-bold px-3 py-1.5 rounded-xl">
+              Today's Tips: Rs. {totalTipsTodaySum.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead>
+              <tr className="border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider">
+                <th className="py-3 px-4 font-bold">Stylist / Member</th>
+                <th className="py-3 px-4 font-bold">Role</th>
+                <th className="py-3 px-4 font-bold text-right">Bookings with Tip (Today)</th>
+                <th className="py-3 px-4 font-bold text-right text-rose-400">Today's Tips</th>
+                <th className="py-3 px-4 font-bold text-right text-slate-400">All-time Tips</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-850">
+              {staffTipsData.length > 0 ? (
+                staffTipsData.map((st, idx) => (
+                  <tr key={idx} className="hover:bg-slate-850/40 transition duration-100">
+                    <td className="py-3.5 px-4 font-semibold text-white flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-300 font-bold">
+                        {st.name[0]}
+                      </div>
+                      <span>{st.name}</span>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-400 font-medium">{st.role}</td>
+                    <td className="py-3.5 px-4 text-right font-mono text-slate-300 font-semibold">{st.countToday} times</td>
+                    <td className="py-3.5 px-4 text-right font-mono text-rose-400 font-extrabold text-sm">Rs. {st.tipToday.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 text-right font-mono text-slate-400 font-bold">Rs. {st.tipAll.toLocaleString()}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-slate-500 font-medium">
+                    Koi tips record available nahi hai
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {staffTipsData.length > 0 && (
+              <tfoot>
+                <tr className="border-t border-slate-800 text-xs font-bold bg-slate-950/20">
+                  <td colSpan={2} className="py-3 px-4 text-slate-400">Grand Total:</td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-300">{staffTipsData.reduce((sum, s) => sum + s.countToday, 0)} times</td>
+                  <td className="py-3 px-4 text-right font-mono text-rose-400 text-sm font-black">Rs. {totalTipsTodaySum.toLocaleString()}</td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-400">Rs. {totalTipsAllSum.toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

@@ -31,3 +31,32 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Print Styling to isolate the receipt container with ID 'printable-receipt' */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  /* Hide all elements on page */
+  body * {
+    visibility: hidden;
+  }
+  /* Show only the printable receipt */
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: black !important;
+    padding: 10mm !important;
+    margin: 0 !important;
+  }
+}

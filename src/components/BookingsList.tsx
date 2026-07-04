@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Booking, SalonService, StaffMember, KhataAccount, KhataLog } from "../types";
-import { updateBookingStatus, deleteBooking, addBooking, saveKhataAccount, addKhataLog } from "../firebaseService";
+import { updateBookingStatus, deleteBooking, addBooking, saveKhataAccount, addKhataLog, adjustKhataBalance } from "../firebaseService";
+import ReceiptModal from "./ReceiptModal";
 import { 
   Search, 
   Trash2, 
@@ -19,7 +20,8 @@ import {
   Sparkles,
   Check,
   AlertTriangle,
-  Edit2
+  Edit2,
+  Printer
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -43,6 +45,10 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
   const [selectedFilterMonth, setSelectedFilterMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0')); // "01"-"12"
   const [selectedFilterYear, setSelectedFilterYear] = useState(() => String(new Date().getFullYear())); // "2026"
 
+  // Receipt modal states
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedReceiptBooking, setSelectedReceiptBooking] = useState<Booking | null>(null);
+
   // Appointment Form State
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [clientName, setClientName] = useState("");
@@ -51,6 +57,9 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "easypaisa" | "jazzcash" | "bank_transfer" | "online">("cash");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("unpaid"); // Default pending appointment to unpaid/khata
+  const [discountInput, setDiscountInput] = useState<string>("0");
+  const [tipInput, setTipInput] = useState<string>("0");
+  const [amountPaidInput, setAmountPaidInput] = useState<string>("");
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState("12:00");
   const [formError, setFormError] = useState("");
@@ -66,6 +75,9 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       setSelectedStaffId(editingBooking.staffId);
       setPaymentMethod(editingBooking.paymentMethod);
       setPaymentStatus(editingBooking.paymentStatus);
+      setDiscountInput(editingBooking.discount !== undefined ? String(editingBooking.discount) : "0");
+      setTipInput(editingBooking.tip !== undefined ? String(editingBooking.tip) : "0");
+      setAmountPaidInput(editingBooking.amountPaid !== undefined ? String(editingBooking.amountPaid) : "");
       setDate(editingBooking.date);
       setTime(editingBooking.time);
     } else {
@@ -75,6 +87,9 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       setSelectedStaffId("");
       setPaymentMethod("cash");
       setPaymentStatus("unpaid");
+      setDiscountInput("0");
+      setTipInput("0");
+      setAmountPaidInput("");
       setDate(new Date().toISOString().split('T')[0]);
       setTime("12:00");
     }
@@ -118,7 +133,12 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
     try {
       const staffMember = staff.find(s => s.id === selectedStaffId);
       const staffName = staffMember ? staffMember.name : "Unknown Staff";
-      const totalAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
+      
+      const subtotal = selectedServices.reduce((sum, s) => sum + s.price, 0);
+      const discount = Math.max(0, parseFloat(discountInput) || 0);
+      const tip = Math.max(0, parseFloat(tipInput) || 0);
+      const totalAmount = Math.max(0, subtotal - discount + tip);
+      const amountPaid = amountPaidInput === "" ? (paymentStatus === "paid" ? totalAmount : 0) : (Math.max(0, parseFloat(amountPaidInput) || 0));
 
       if (editingBooking) {
         const updatedBooking: Booking = {
@@ -128,7 +148,11 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
           services: selectedServices,
           staffId: selectedStaffId,
           staffName,
+          subtotal,
+          discount,
+          tip,
           totalAmount,
+          amountPaid,
           paymentMethod,
           paymentStatus,
           date,
@@ -143,6 +167,9 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
         setSelectedStaffId("");
         setPaymentMethod("cash");
         setPaymentStatus("unpaid");
+        setDiscountInput("0");
+        setTipInput("0");
+        setAmountPaidInput("");
         setShowAppointmentModal(false);
         onBookingAdded();
         setFormLoading(false);
@@ -158,7 +185,11 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
         services: selectedServices,
         staffId: selectedStaffId,
         staffName,
+        subtotal,
+        discount,
+        tip,
         totalAmount,
+        amountPaid,
         paymentMethod,
         paymentStatus,
         status: "pending", // Scheduled starts as pending
@@ -171,28 +202,23 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
 
       // Log in Khata Book if payment is Unpaid/Khata
       if (paymentStatus === "unpaid") {
-        const khataId = `khata-client-${finalClientPhone}`;
-        const newKhata: KhataAccount = {
-          id: khataId,
-          name: finalClientName,
-          type: "client",
-          phone: finalClientPhone,
-          balance: totalAmount,
-          lastUpdated: new Date().toISOString()
-        };
-        await saveKhataAccount(newKhata);
+        const remainingDebt = Math.max(0, totalAmount - amountPaid);
+        if (remainingDebt > 0) {
+          const khataId = `khata-client-${finalClientPhone}`;
+          await adjustKhataBalance(khataId, finalClientName, finalClientPhone, remainingDebt);
 
-        const khataLog: KhataLog = {
-          id: `klog-${Date.now()}`,
-          accountId: khataId,
-          accountName: finalClientName,
-          amount: totalAmount,
-          type: "debit",
-          description: `Appointment: ${selectedServices.map(s => s.name).join(", ")}`,
-          date,
-          createdAt: new Date().toISOString()
-        };
-        await addKhataLog(khataLog);
+          const khataLog: KhataLog = {
+            id: `klog-${Date.now()}`,
+            accountId: khataId,
+            accountName: finalClientName,
+            amount: remainingDebt,
+            type: "debit",
+            description: `Appointment: ${selectedServices.map(s => s.name).join(", ")} (Total: Rs. ${totalAmount}, Paid: Rs. ${amountPaid})`,
+            date,
+            createdAt: new Date().toISOString()
+          };
+          await addKhataLog(khataLog);
+        }
       }
 
       setClientName("");
@@ -201,6 +227,9 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
       setSelectedStaffId("");
       setPaymentMethod("cash");
       setPaymentStatus("unpaid");
+      setDiscountInput("0");
+      setTipInput("0");
+      setAmountPaidInput("");
       setShowAppointmentModal(false);
       onBookingAdded();
     } catch (err) {
@@ -612,6 +641,21 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
                     <span className="text-sm font-bold text-emerald-400 font-mono block">
                       Rs. {booking.totalAmount.toLocaleString()}
                     </span>
+                    {booking.discount ? (
+                      <span className="text-[9px] text-rose-400 font-mono block">
+                        -Rs. {booking.discount.toLocaleString()} (Discount)
+                      </span>
+                    ) : null}
+                    {booking.tip ? (
+                      <span className="text-[9px] text-emerald-400 font-mono block">
+                        +Rs. {booking.tip.toLocaleString()} (Inaam)
+                      </span>
+                    ) : null}
+                    {booking.amountPaid !== undefined && booking.amountPaid !== booking.totalAmount ? (
+                      <span className="text-[9px] text-slate-400 font-mono block">
+                        Paid: Rs. {booking.amountPaid.toLocaleString()}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -627,6 +671,18 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
                   >
                     <RefreshCw size={10} className="animate-spin-slow" />
                     <span className="capitalize">{booking.status}</span>
+                  </button>
+
+                  {/* Receipt (Print/Save) Button */}
+                  <button
+                    onClick={() => {
+                      setSelectedReceiptBooking(booking);
+                      setShowReceiptModal(true);
+                    }}
+                    className="text-slate-400 hover:text-amber-400 p-2 bg-slate-950 border border-slate-800 hover:border-amber-500/20 rounded-xl transition duration-150 flex items-center justify-center cursor-pointer"
+                    title="Print/Share Receipt"
+                  >
+                    <Printer size={13} className="text-amber-500" />
                   </button>
 
                   {/* Edit Button */}
@@ -865,12 +921,93 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
                   </div>
                 </div>
 
+                {/* Discount & Tip Inputs */}
+                <div className="grid grid-cols-2 gap-3.5 pt-1.5">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wide block">
+                      🎁 Discount (Rihayat - Rs.)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={discountInput === "0" ? "" : discountInput}
+                      onChange={(e) => setDiscountInput(e.target.value || "0")}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600 outline-none font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wide block">
+                      ⭐ Tip (Stylist Inaam - Rs.)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={tipInput === "0" ? "" : tipInput}
+                      onChange={(e) => setTipInput(e.target.value || "0")}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600 outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Amount Received Input */}
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-[10px] text-amber-400 font-bold uppercase tracking-wide block">
+                    💵 Amount Received (Usne Mujhe Kitne Diye - Rs.)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={`Default: Rs. ${(selectedServices.reduce((sum, s) => sum + s.price, 0) - (Math.max(0, parseFloat(discountInput) || 0)) + (Math.max(0, parseFloat(tipInput) || 0))).toLocaleString()}`}
+                    value={amountPaidInput}
+                    onChange={(e) => setAmountPaidInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3.5 text-xs text-white placeholder-slate-600 outline-none font-mono"
+                  />
+                </div>
+
                 {/* Grand Total Display */}
-                <div className="bg-slate-950 border border-slate-800 p-3 rounded-2xl flex justify-between items-center">
-                  <span className="text-slate-500 font-semibold text-xs">Total Bill Estimate:</span>
-                  <span className="text-base font-black text-emerald-400 font-mono">
-                    Rs. {selectedServices.reduce((sum, s) => sum + s.price, 0).toLocaleString()}
-                  </span>
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2.5">
+                  <div className="flex justify-between items-center text-xs text-slate-400">
+                    <span>Subtotal:</span>
+                    <span className="font-mono">Rs. {selectedServices.reduce((sum, s) => sum + s.price, 0).toLocaleString()}</span>
+                  </div>
+                  {(Math.max(0, parseFloat(discountInput) || 0)) > 0 && (
+                    <div className="flex justify-between items-center text-xs text-rose-400">
+                      <span>Discount (Sastai):</span>
+                      <span className="font-mono">- Rs. {(Math.max(0, parseFloat(discountInput) || 0)).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {(Math.max(0, parseFloat(tipInput) || 0)) > 0 && (
+                    <div className="flex justify-between items-center text-xs text-emerald-400">
+                      <span>Tip (Stylist Inaam):</span>
+                      <span className="font-mono">+ Rs. {(Math.max(0, parseFloat(tipInput) || 0)).toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-900">
+                    <span className="text-xs font-bold text-white uppercase">Grand Total:</span>
+                    <span className="text-sm font-black text-amber-400 font-mono">
+                      Rs. {Math.max(0, selectedServices.reduce((sum, s) => sum + s.price, 0) - (Math.max(0, parseFloat(discountInput) || 0)) + (Math.max(0, parseFloat(tipInput) || 0))).toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Cash Return display inside Modal */}
+                  {paymentStatus === "paid" && (
+                    <div className="border-t border-slate-900 pt-2 flex justify-between items-center text-[11px]">
+                      <span className="text-slate-400">Change Return (Baqaya):</span>
+                      <span className="text-emerald-400 font-black font-mono">
+                        Rs. {Math.max(0, (amountPaidInput === "" ? Math.max(0, selectedServices.reduce((sum, s) => sum + s.price, 0) - (Math.max(0, parseFloat(discountInput) || 0)) + (Math.max(0, parseFloat(tipInput) || 0))) : (Math.max(0, parseFloat(amountPaidInput) || 0))) - Math.max(0, selectedServices.reduce((sum, s) => sum + s.price, 0) - (Math.max(0, parseFloat(discountInput) || 0)) + (Math.max(0, parseFloat(tipInput) || 0)))).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {paymentStatus === "unpaid" && (
+                    <div className="border-t border-slate-900 pt-2 flex justify-between items-center text-[11px]">
+                      <span className="text-slate-400">Add to Khata (Pending):</span>
+                      <span className="text-rose-400 font-black font-mono">
+                        Rs. {Math.max(0, Math.max(0, selectedServices.reduce((sum, s) => sum + s.price, 0) - (Math.max(0, parseFloat(discountInput) || 0)) + (Math.max(0, parseFloat(tipInput) || 0))) - (amountPaidInput === "" ? 0 : (Math.max(0, parseFloat(amountPaidInput) || 0)))).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2.5 pt-3 justify-end text-xs font-bold">
@@ -897,6 +1034,15 @@ export default function BookingsList({ bookings, services, staff, onBookingAdded
           </div>
         )}
       </AnimatePresence>
+
+      <ReceiptModal
+        isOpen={showReceiptModal}
+        onClose={() => {
+          setShowReceiptModal(false);
+          setSelectedReceiptBooking(null);
+        }}
+        booking={selectedReceiptBooking || {}}
+      />
     </div>
   );
 }

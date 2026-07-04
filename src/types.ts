@@ -37,6 +37,10 @@ export interface Booking {
   staffId: string;
   staffName: string;
   totalAmount: number;
+  discount?: number; // Discount given in Rs.
+  tip?: number; // Tip received in Rs.
+  subtotal?: number; // Total before discount & tip
+  amountPaid?: number; // Amount paid/received from the client in Rs.
   paymentMethod: "cash" | "easypaisa" | "jazzcash" | "bank_transfer" | "online";
   paymentStatus: "paid" | "unpaid";
   status: "completed" | "pending" | "cancelled";

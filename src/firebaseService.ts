@@ -6,6 +6,7 @@ import {
   doc, 
   deleteDoc, 
   updateDoc,
+  getDoc,
   query,
   orderBy
 } from "firebase/firestore";
@@ -20,55 +21,56 @@ export async function seedDatabaseIfEmpty() {
     return;
   }
   try {
-    // Check if seeded flag exists in Firestore metadata collection
-    const metaSnap = await getDocs(collection(db, "metadata"));
-    let isAlreadySeeded = false;
-    metaSnap.forEach((doc) => {
-      if (doc.id === "seeding" && doc.data().seeded === true) {
-        isAlreadySeeded = true;
-      }
-    });
-
-    if (isAlreadySeeded) {
-      console.log("Database already seeded on Firestore. Auto-seeding skipped.");
-      return;
-    }
-
+    // 1. Ensure all official services are present in the database (non-destructive sync)
     const servicesSnap = await getDocs(collection(db, "services"));
-    const staffSnap = await getDocs(collection(db, "staff"));
-    const leavesSnap = await getDocs(collection(db, "leaves"));
-    const bookingsSnap = await getDocs(collection(db, "bookings"));
+    const existingServiceIds = new Set(servicesSnap.docs.map(doc => doc.id));
+    let seededServicesCount = 0;
 
-    // If there is already substantial data in the db, we mark it as seeded to prevent overwrites on deletion
-    if (servicesSnap.size > 0 || staffSnap.size > 0 || !leavesSnap.empty || !bookingsSnap.empty) {
-      console.log("Existing data found. Marking database as seeded to prevent overwrites.");
-      await setDoc(doc(db, "metadata", "seeding"), { seeded: true, seededAt: new Date().toISOString() });
-      return;
-    }
-
-    console.log("Seeding/Refilling official services menu (112 items)...");
     for (const service of INITIAL_SERVICES) {
-      await setDoc(doc(db, "services", service.id), service);
+      if (!existingServiceIds.has(service.id)) {
+        await setDoc(doc(db, "services", service.id), service);
+        seededServicesCount++;
+      }
+    }
+    if (seededServicesCount > 0) {
+      console.log(`Seeded ${seededServicesCount} missing official services to the menu.`);
     }
 
-    console.log("Seeding staff (4 members)...");
+    // 2. Ensure all official staff members are present (non-destructive sync)
+    const staffSnap = await getDocs(collection(db, "staff"));
+    const existingStaffIds = new Set(staffSnap.docs.map(doc => doc.id));
+    let seededStaffCount = 0;
+
     for (const st of INITIAL_STAFF) {
-      await setDoc(doc(db, "staff", st.id), st);
+      if (!existingStaffIds.has(st.id)) {
+        await setDoc(doc(db, "staff", st.id), st);
+        seededStaffCount++;
+      }
+    }
+    if (seededStaffCount > 0) {
+      console.log(`Seeded ${seededStaffCount} missing official staff members.`);
     }
 
-    console.log("Seeding leaves...");
-    for (const leave of INITIAL_LEAVES) {
-      await setDoc(doc(db, "leaves", leave.id), leave);
+    // 3. Ensure leaves and bookings are seeded if those collections are empty
+    const leavesSnap = await getDocs(collection(db, "leaves"));
+    if (leavesSnap.empty) {
+      console.log("Leaves collection is empty. Seeding leaves...");
+      for (const leave of INITIAL_LEAVES) {
+        await setDoc(doc(db, "leaves", leave.id), leave);
+      }
     }
 
-    console.log("Seeding bookings...");
-    for (const b of INITIAL_BOOKINGS) {
-      await setDoc(doc(db, "bookings", b.id), b);
+    const bookingsSnap = await getDocs(collection(db, "bookings"));
+    if (bookingsSnap.empty) {
+      console.log("Bookings collection is empty. Seeding bookings...");
+      for (const b of INITIAL_BOOKINGS) {
+        await setDoc(doc(db, "bookings", b.id), b);
+      }
     }
 
     // Set the metadata seeding flag
     await setDoc(doc(db, "metadata", "seeding"), { seeded: true, seededAt: new Date().toISOString() });
-    console.log("Database seeded successfully.");
+    console.log("Database auto-check and seeding complete.");
   } catch (error) {
     console.error("Error seeding database: ", error);
   }
@@ -275,6 +277,42 @@ export async function getKhataAccounts(): Promise<KhataAccount[]> {
 
 export async function saveKhataAccount(account: KhataAccount): Promise<void> {
   await setDoc(doc(db, "khata_accounts", account.id), account);
+}
+
+export async function adjustKhataBalance(accountId: string, accountName: string, accountPhone: string, amountToAdjust: number): Promise<void> {
+  const accountRef = doc(db, "khata_accounts", accountId);
+  try {
+    const docSnap = await getDoc(accountRef);
+    if (docSnap.exists()) {
+      const currentBalance = docSnap.data().balance || 0;
+      await updateDoc(accountRef, {
+        balance: currentBalance + amountToAdjust,
+        lastUpdated: new Date().toISOString()
+      });
+    } else {
+      const newKhata: KhataAccount = {
+        id: accountId,
+        name: accountName,
+        type: "client",
+        phone: accountPhone,
+        balance: amountToAdjust,
+        lastUpdated: new Date().toISOString()
+      };
+      await setDoc(accountRef, newKhata);
+    }
+  } catch (err) {
+    console.error("Error adjusting khata balance:", err);
+    // fallback
+    const newKhata: KhataAccount = {
+      id: accountId,
+      name: accountName,
+      type: "client",
+      phone: accountPhone,
+      balance: amountToAdjust,
+      lastUpdated: new Date().toISOString()
+    };
+    await setDoc(accountRef, newKhata);
+  }
 }
 
 export async function deleteKhataAccount(id: string): Promise<void> {

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { SalonService, StaffMember, Booking, KhataAccount, KhataLog, Product } from "../types";
 import { motion, AnimatePresence } from "motion/react";
-import { addBooking, saveKhataAccount, addKhataLog, updateProduct } from "../firebaseService";
+import { addBooking, saveKhataAccount, addKhataLog, updateProduct, adjustKhataBalance } from "../firebaseService";
+import ReceiptModal from "./ReceiptModal";
 import { 
   User, 
   Phone, 
@@ -14,7 +15,9 @@ import {
   Trash2,
   Wallet,
   ShoppingBag,
-  Clock
+  Clock,
+  Printer,
+  Share2
 } from "lucide-react";
 
 interface PosBillingProps {
@@ -49,6 +52,15 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
   const [searchServiceQuery, setSearchServiceQuery] = useState("");
   const [searchProductQuery, setSearchProductQuery] = useState("");
   const [pickerTab, setPickerTab] = useState<"services" | "products">("services");
+
+  // Discount & Tip state
+  const [discountInput, setDiscountInput] = useState<string>("0");
+  const [tipInput, setTipInput] = useState<string>("0");
+  const [amountPaidInput, setAmountPaidInput] = useState<string>("");
+
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptBookingData, setReceiptBookingData] = useState<any>(null);
 
   // Filter services by search
   const filteredServices = services.filter(s => 
@@ -130,7 +142,12 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
   // Calculate Subtotal
   const totalServicesAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
   const totalProductsAmount = selectedProducts.reduce((sum, p) => sum + p.price, 0);
-  const totalAmount = totalServicesAmount + totalProductsAmount;
+  const subtotalAmount = totalServicesAmount + totalProductsAmount;
+  const discount = Math.max(0, parseFloat(discountInput) || 0);
+  const tip = Math.max(0, parseFloat(tipInput) || 0);
+  const totalAmount = Math.max(0, subtotalAmount - discount + tip);
+  const amountPaid = amountPaidInput === "" ? (paymentStatus === "paid" ? totalAmount : 0) : (Math.max(0, parseFloat(amountPaidInput) || 0));
+  const changeDue = Math.max(0, amountPaid - totalAmount);
 
   // Submit Sale Handler
   const handleSubmitSale = async (e: React.FormEvent) => {
@@ -185,6 +202,10 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
         staffId: selectedStaffId,
         staffName,
         totalAmount,
+        discount,
+        tip,
+        subtotal: subtotalAmount,
+        amountPaid,
         paymentMethod,
         paymentStatus,
         status: "completed",
@@ -210,33 +231,28 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
 
       // Automatically register client dues in Khata Book if payment is unpaid (not received / khata)
       if (paymentStatus === "unpaid") {
-        const khataId = `khata-client-${finalClientPhone}`;
-        const newKhata: KhataAccount = {
-          id: khataId,
-          name: finalClientName,
-          type: "client",
-          phone: finalClientPhone,
-          balance: totalAmount,
-          lastUpdated: new Date().toISOString()
-        };
-        await saveKhataAccount(newKhata);
+        const remainingDebt = Math.max(0, totalAmount - amountPaid);
+        if (remainingDebt > 0) {
+          const khataId = `khata-client-${finalClientPhone}`;
+          await adjustKhataBalance(khataId, finalClientName, finalClientPhone, remainingDebt);
 
-        const itemNames = [
-          ...selectedServices.map(s => s.name),
-          ...selectedProducts.map(p => p.name)
-        ];
+          const itemNames = [
+            ...selectedServices.map(s => s.name),
+            ...selectedProducts.map(p => p.name)
+          ];
 
-        const khataLog: KhataLog = {
-          id: `klog-${Date.now()}`,
-          accountId: khataId,
-          accountName: finalClientName,
-          amount: totalAmount,
-          type: "debit",
-          description: `POS Bill: ${itemNames.join(", ")}`,
-          date,
-          createdAt: new Date().toISOString()
-        };
-        await addKhataLog(khataLog);
+          const khataLog: KhataLog = {
+            id: `klog-${Date.now()}`,
+            accountId: khataId,
+            accountName: finalClientName,
+            amount: remainingDebt,
+            type: "debit",
+            description: `POS Bill: ${itemNames.join(", ")} (Total: Rs. ${totalAmount}, Paid: Rs. ${amountPaid})`,
+            date,
+            createdAt: new Date().toISOString()
+          };
+          await addKhataLog(khataLog);
+        }
       }
 
       setSuccess(true);
@@ -251,6 +267,9 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
       setSelectedStaffId("");
       setPaymentMethod("cash");
       setPaymentStatus("paid");
+      setDiscountInput("0");
+      setTipInput("0");
+      setAmountPaidInput("");
       setDate(new Date().toISOString().split('T')[0]);
       setTime(() => {
         const now = new Date();
@@ -277,6 +296,37 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
     { key: "bank_transfer", label: "Bank Transfer", icon: "🏦", color: "border-blue-500/30 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 active:bg-blue-500/20" },
     { key: "online", label: "Online Card/Web", icon: "💳", color: "border-purple-500/30 text-purple-400 bg-purple-500/5 hover:bg-purple-500/10 active:bg-purple-500/20" }
   ] as const;
+
+  const handleOpenReceiptModal = (mode: 'print' | 'share') => {
+    let finalClientName = clientName.trim() || "Walk-In Client";
+    let finalClientPhone = clientPhone.trim() || "0000000000";
+    
+    const staffMember = staff.find(s => s.id === selectedStaffId);
+    const staffName = staffMember ? staffMember.name : "Unknown Staff";
+
+    const previewBooking: Partial<Booking> = {
+      id: `preview-${Date.now()}`,
+      clientName: finalClientName,
+      clientPhone: finalClientPhone,
+      bookingType,
+      services: selectedServices,
+      products: selectedProducts,
+      staffId: selectedStaffId,
+      staffName,
+      totalAmount,
+      discount,
+      tip,
+      subtotal: subtotalAmount,
+      paymentMethod,
+      paymentStatus,
+      status: "completed",
+      date,
+      time,
+    };
+
+    setReceiptBookingData(previewBooking);
+    setShowReceiptModal(true);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -838,45 +888,152 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
             </div>
           </div>
 
+          {/* Section 6: Discount & Tip Inputs */}
+          <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-slate-800">
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                🎁 Discount (Rihayat - Rs.)
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={discountInput === "0" ? "" : discountInput}
+                onChange={(e) => setDiscountInput(e.target.value || "0")}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600 outline-none font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                ⭐ Tip (Inaam - Rs.)
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={tipInput === "0" ? "" : tipInput}
+                onChange={(e) => setTipInput(e.target.value || "0")}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600 outline-none font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Section 7: Amount Received Input */}
+          <div className="pt-2.5 space-y-1">
+            <label className="text-[10px] text-amber-400 font-bold uppercase tracking-wider block flex items-center gap-1">
+              💵 Amount Received (Usne Mujhe Kitne Diye - Rs.)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                placeholder={`Default: Rs. ${totalAmount.toLocaleString()}`}
+                value={amountPaidInput}
+                onChange={(e) => setAmountPaidInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3.5 pr-10 text-xs text-white placeholder-slate-600 outline-none font-mono"
+              />
+              <span className="absolute right-3 top-2.5 text-[10px] text-slate-500 font-bold font-mono">PKR</span>
+            </div>
+          </div>
+
           {/* Total Calculation Panel */}
           <div className="bg-slate-950/80 rounded-2xl p-4 border border-slate-800 space-y-2 mt-4">
             <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-400">Total Items:</span>
-              <span className="text-slate-200 font-mono font-medium">
-                {selectedServices.length} {selectedServices.length === 1 ? 'Service' : 'Services'}
-                {selectedProducts.length > 0 && ` & ${selectedProducts.length} ${selectedProducts.length === 1 ? 'Product' : 'Products'}`}
-              </span>
+              <span className="text-slate-400">Subtotal (Kul Bill):</span>
+              <span className="text-slate-200 font-mono font-medium">Rs. {subtotalAmount.toLocaleString()}</span>
             </div>
+            {discount > 0 && (
+              <div className="flex justify-between items-center text-xs text-rose-400">
+                <span>Discount (Sastai):</span>
+                <span className="font-mono">- Rs. {discount.toLocaleString()}</span>
+              </div>
+            )}
+            {tip > 0 && (
+              <div className="flex justify-between items-center text-xs text-emerald-400">
+                <span>Tip (Stylist Inaam):</span>
+                <span className="font-mono">+ Rs. {tip.toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center text-xs border-b border-slate-800/60 pb-2">
               <span className="text-slate-400">Tax/GSTR:</span>
               <span className="text-slate-500 font-mono">Rs. 0 (Waived)</span>
             </div>
             <div className="flex justify-between items-center pt-1">
-              <span className="text-sm font-bold text-white">Grand Total:</span>
+              <span className="text-sm font-bold text-white">Grand Total (Net Rakam):</span>
               <span className="text-xl font-black text-amber-400 font-mono">Rs. {totalAmount.toLocaleString()}</span>
             </div>
+
+            {/* Live Cash Return Calculations */}
+            {paymentStatus === "paid" && (
+              <div className="border-t border-slate-800/80 pt-2 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Received (Vusool Shuda):</span>
+                  <span className="text-slate-200 font-mono">Rs. {amountPaid.toLocaleString()}</span>
+                </div>
+                {changeDue > 0 && (
+                  <div className="flex justify-between items-center text-emerald-400 font-bold bg-emerald-500/5 py-1 px-2 rounded-lg border border-emerald-500/10">
+                    <span>Change Return (Wapas Baqaya):</span>
+                    <span className="font-mono">Rs. {changeDue.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {paymentStatus === "unpaid" && (
+              <div className="border-t border-slate-800/80 pt-2 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Paid Amount (Partial):</span>
+                  <span className="text-slate-200 font-mono">Rs. {amountPaid.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-rose-400 font-bold bg-rose-500/5 py-1 px-2 rounded-lg border border-rose-500/10">
+                  <span>Pending Khata (Udhaar Register):</span>
+                  <span className="font-mono">Rs. {Math.max(0, totalAmount - amountPaid).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Checkout Buttons */}
-          <div className="pt-2">
+          {/* Checkout & Separate Receipt Action Buttons */}
+          <div className="pt-2 space-y-3">
+            {/* Primary Action: Settle Bill */}
             <button
               type="button"
               onClick={handleSubmitSale}
               disabled={loading}
-              className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold py-3.5 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/10 active:scale-[0.98] disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold py-3.5 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
-                  <span>Sale Save Ki Ja Rahi Hai...</span>
+                  <span>Settle Ho Raha Hai...</span>
                 </>
               ) : (
                 <>
                   <Wallet size={18} className="stroke-[2.5]" />
-                  <span>Settle Bill & Print Receipt (Rs. {totalAmount.toLocaleString()})</span>
+                  <span>Settle Bill & Record (Rs. {totalAmount.toLocaleString()})</span>
                 </>
               )}
             </button>
+
+            {/* Separate Print & Save Buttons Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleOpenReceiptModal('print')}
+                className="bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Printer size={13} className="text-amber-500" />
+                Print Receipt
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenReceiptModal('share')}
+                className="bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Share2 size={13} className="text-amber-500" />
+                Save Receipt
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -925,6 +1082,12 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ReceiptModal
+        isOpen={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        booking={receiptBookingData}
+      />
     </div>
   );
 }
