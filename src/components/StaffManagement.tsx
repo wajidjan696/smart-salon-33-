@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { StaffMember, Booking, StaffLeave, StaffAttendance, ShopTiming } from "../types";
+import { calculateBookingCommission } from "../commissionUtils";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   addStaff, 
@@ -234,6 +235,9 @@ export default function StaffManagement({
   const [role, setRole] = useState("Junior Stylist");
   const [joinedDate, setJoinedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState("10:00");
+  const [endTime, setEndTime] = useState("00:00");
+  const [lateNight20Enabled, setLateNight20Enabled] = useState(false);
+  const [facial15Enabled, setFacial15Enabled] = useState(false);
 
   // UI state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -269,7 +273,10 @@ export default function StaffManagement({
           role,
           joinedDate,
           status: existingMember ? existingMember.status : "active",
-          startTime
+          startTime,
+          endTime,
+          lateNight20Enabled,
+          facial15Enabled
         };
         await updateStaff(updatedMember);
         setEditingStaffId(null);
@@ -282,7 +289,10 @@ export default function StaffManagement({
           role,
           joinedDate,
           status: "active",
-          startTime
+          startTime,
+          endTime,
+          lateNight20Enabled,
+          facial15Enabled
         };
         await addStaff(newStaff);
       }
@@ -292,6 +302,9 @@ export default function StaffManagement({
       setPhone("");
       setRole("Junior Stylist");
       setStartTime("10:00");
+      setEndTime("00:00");
+      setLateNight20Enabled(false);
+      setFacial15Enabled(false);
       setSuccess(true);
       onStaffAdded();
 
@@ -315,6 +328,9 @@ export default function StaffManagement({
     setRole(member.role);
     setJoinedDate(member.joinedDate);
     setStartTime(member.startTime || "10:00");
+    setEndTime(member.endTime || "00:00");
+    setLateNight20Enabled(!!member.lateNight20Enabled);
+    setFacial15Enabled(!!member.facial15Enabled);
     setShowAddForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -368,12 +384,20 @@ export default function StaffManagement({
     const staffLeaves = leaves.filter(l => l.staffId === staffId);
     const totalLeavesDays = staffLeaves.reduce((sum, l) => sum + l.totalDays, 0);
 
+    // 7. Calculate total commission based on 10% regular / 20% late night
+    const member = staff.find(s => s.id === staffId);
+    const totalCommission = staffBookings.reduce(
+      (sum, b) => sum + calculateBookingCommission(b, b.time, member),
+      0
+    );
+
     return {
       totalRevenue,
       clientCount,
       servicesCount,
       serviceTally,
-      totalLeavesDays
+      totalLeavesDays,
+      totalCommission
     };
   };
 
@@ -408,6 +432,8 @@ export default function StaffManagement({
               setPhone("");
               setRole("Junior Stylist");
               setStartTime("10:00");
+              setEndTime("00:00");
+              setLateNight20Enabled(false);
             }
             setShowAddForm(!showAddForm);
           }}
@@ -445,7 +471,7 @@ export default function StaffManagement({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400 font-medium">Poora Naam (Full Name)</label>
                   <input
@@ -494,19 +520,101 @@ export default function StaffManagement({
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono"
                   />
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs text-slate-400 font-medium font-bold">Duty Ka Waqt (Shift Start Time) *</label>
-                  <input
-                    type="time"
-                    required
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono font-bold text-amber-400"
-                  />
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    * Har karkun ki alag timing yahan set karein. Attendance lagate waqt agar is waqt se late hue, to system khud hi "Late" detect kar lega!
-                  </p>
+              {/* Shift timings and overtime rules */}
+              <div className="bg-slate-950/45 border border-slate-800/80 p-5 rounded-2xl space-y-3.5">
+                <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock size={14} className="text-amber-500 animate-pulse" />
+                  Duty Timings & Overtime Rules (Duty o Commission Ke Qawaneen)
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                      Duty Shuru Ka Waqt (Shift Start)
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono font-bold text-amber-400"
+                    />
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Attendance lagate waqt is waqt se late hue, to "Late" mark hoga.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                      Duty Chutti Ka Waqt (Shift End)
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3 text-xs text-white outline-none transition font-mono font-bold text-amber-400"
+                    />
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Expected shift end time (e.g., Midnight midnight 12:00 baje ke liye "00:00" likhein).
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 flex flex-col justify-between">
+                    <label className="text-xs text-slate-400 font-bold">Late Night Overtime Setting</label>
+                    <div 
+                      onClick={() => setLateNight20Enabled(!lateNight20Enabled)}
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition select-none ${
+                        lateNight20Enabled 
+                          ? "bg-amber-500/10 border-amber-500/30 text-amber-400" 
+                          : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold block">Late Night 20% Overtime</span>
+                        <span className="text-[9px] text-slate-500 leading-tight block">
+                          Duty timing ke baad ke bookings par 20% commission milega!
+                        </span>
+                      </div>
+                      <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
+                        lateNight20Enabled ? 'bg-amber-500' : 'bg-slate-800'
+                      }`}>
+                        <div className={`bg-slate-950 w-3 h-3 rounded-full shadow-md transform duration-200 ${
+                          lateNight20Enabled ? 'translate-x-4' : 'translate-x-0'
+                        }`} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 flex flex-col justify-between">
+                    <label className="text-xs text-slate-400 font-bold">Facial Special Setting</label>
+                    <div 
+                      onClick={() => setFacial15Enabled(!facial15Enabled)}
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition select-none ${
+                        facial15Enabled 
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
+                          : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold block">Facial 15% (&gt;1500)</span>
+                        <span className="text-[9px] text-slate-500 leading-tight block">
+                          Rs. 1500 se ziada ke facial par 15% commission milega!
+                        </span>
+                      </div>
+                      <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
+                        facial15Enabled ? 'bg-emerald-500' : 'bg-slate-800'
+                      }`}>
+                        <div className={`bg-slate-950 w-3 h-3 rounded-full shadow-md transform duration-200 ${
+                          facial15Enabled ? 'translate-x-4' : 'translate-x-0'
+                        }`} />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -520,6 +628,9 @@ export default function StaffManagement({
                       setPhone("");
                       setRole("Junior Stylist");
                       setStartTime("10:00");
+                      setEndTime("00:00");
+                      setLateNight20Enabled(false);
+                      setFacial15Enabled(false);
                       setShowAddForm(false);
                     }}
                     className="bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold py-2.5 px-5 rounded-xl border border-slate-700/60 transition"
@@ -804,7 +915,7 @@ export default function StaffManagement({
                 {/* Card Header (Name, Role, and Active status) */}
                 <div className="flex justify-between items-start gap-3 relative z-10">
                   <div className="space-y-0.5">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                       {member.name}
                       {stats.totalRevenue > 4000 && member.status === "active" && (
                         <span className="text-[10px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded-full border border-amber-500/20 flex items-center gap-0.5 uppercase">
@@ -812,10 +923,26 @@ export default function StaffManagement({
                         </span>
                       )}
                     </h3>
-                    <p className="text-xs text-amber-400 font-semibold">{member.role}</p>
-                    <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400 font-medium font-mono">
-                      <Clock size={10} className="text-amber-500/80" />
-                      <span>Shift Start: {member.startTime || "10:00"}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-amber-400 font-semibold">{member.role}</p>
+                      {member.lateNight20Enabled && (
+                        <span className="text-[8px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md uppercase">
+                          🌙 Late Night 20%
+                        </span>
+                      )}
+                      {member.facial15Enabled && (
+                        <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md uppercase">
+                          🧴 Facial 15% (&gt;1500)
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium font-mono">
+                      <span className="flex items-center gap-1">
+                        <Clock size={10} className="text-amber-500/80" />
+                        Start: {member.startTime || "10:00"}
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span>End (Chutti): {member.endTime || "00:00"}</span>
                     </div>
 
                     {/* Today's Presence / Punctuality Badge */}
@@ -895,8 +1022,15 @@ export default function StaffManagement({
                   </div>
 
                   <div className="bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20 text-center">
-                    <span className="text-[9px] text-amber-500 uppercase tracking-wider block font-bold">10% Commission</span>
-                    <span className="text-xs font-bold text-amber-400 font-mono block mt-1">Rs. {Math.round(stats.totalRevenue * 0.1).toLocaleString()}</span>
+                    <span className="text-[9px] text-amber-500 uppercase tracking-wider block font-bold">
+                      {member.lateNight20Enabled 
+                        ? "Commission (Late Night Active)" 
+                        : member.facial15Enabled 
+                          ? "Commission (Facial 15% Active)" 
+                          : "Regular Commission (10%)"
+                      }
+                    </span>
+                    <span className="text-xs font-bold text-amber-400 font-mono block mt-1">Rs. {stats.totalCommission.toLocaleString()}</span>
                   </div>
 
                   <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 text-center">

@@ -7,9 +7,10 @@ import {
   seedDatabaseIfEmpty,
   clearAllDatabase,
   getMonthlyArchives,
-  getProducts
+  getProducts,
+  getShopTimings
 } from "./firebaseService";
-import { SalonService, StaffMember, StaffLeave, Booking, ActiveTab, MonthlyArchive, Product } from "./types";
+import { SalonService, StaffMember, StaffLeave, Booking, ActiveTab, MonthlyArchive, Product, ShopTiming } from "./types";
 import DashboardOverview from "./components/DashboardOverview";
 import PosBilling from "./components/PosBilling";
 import StaffManagement from "./components/StaffManagement";
@@ -47,6 +48,7 @@ export default function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [monthlyArchives, setMonthlyArchives] = useState<MonthlyArchive[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [todayShopTiming, setTodayShopTiming] = useState<ShopTiming | null>(null);
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
@@ -113,13 +115,14 @@ export default function App() {
       await seedDatabaseIfEmpty();
 
       // 2. Fetch everything
-      const [allServices, allStaff, allLeaves, allBookings, allArchives, allProducts] = await Promise.all([
+      const [allServices, allStaff, allLeaves, allBookings, allArchives, allProducts, allShopTimings] = await Promise.all([
         getServices(),
         getStaff(),
         getLeaves(),
         getBookings(),
         getMonthlyArchives(),
-        getProducts()
+        getProducts(),
+        getShopTimings()
       ]);
 
       setServices(allServices);
@@ -128,6 +131,10 @@ export default function App() {
       setBookings(allBookings);
       setMonthlyArchives(allArchives);
       setProducts(allProducts);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const foundTodayTiming = allShopTimings.find(t => t.date === todayStr);
+      setTodayShopTiming(foundTodayTiming || null);
 
     } catch (error) {
       console.error("Error loading application data:", error);
@@ -164,8 +171,20 @@ export default function App() {
     { id: "products", label: "Products & Sales", icon: Package, color: "text-teal-400 bg-teal-500/10" }
   ] as const;
 
+  const isShopClosed = !!(todayShopTiming && todayShopTiming.closeTime);
+
   return (
-    <div className="min-h-screen bg-[#070b13] text-slate-100 flex flex-col font-sans">
+    <div className={`min-h-screen bg-[#070b13] text-slate-100 flex flex-col font-sans transition-all duration-[2000ms] ease-in-out ${
+      isShopClosed 
+        ? "grayscale-[0.65] brightness-[0.45] saturate-[0.4] contrast-[0.9] [text-shadow:0_0_8px_rgba(251,191,36,0.1)]" 
+        : ""
+    }`}>
+      {isShopClosed && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs font-bold text-amber-400 flex items-center justify-center gap-2 animate-pulse sticky top-14 z-30 backdrop-blur">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+          <span>⚡ Emergency Power Backup Active • Dukan Band (Closed) Hai • Dashboard par "Slide to Re-Open" karne se main light wapis on hogi! 💡</span>
+        </div>
+      )}
       {/* Header bar */}
       <header className="border-b border-slate-900 bg-slate-950/60 backdrop-blur-md sticky top-0 z-40 px-4 py-3 sm:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -229,7 +248,7 @@ export default function App() {
       {/* Main Container */}
       <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col lg:flex-row gap-6">
         {/* Navigation Sidebar (Vertical left-hand menu on desktop, horizontal scroll on mobile) */}
-        <nav className="w-full lg:w-64 flex-shrink-0 flex lg:flex-col overflow-x-auto lg:overflow-x-visible gap-2 border-b lg:border-b-0 lg:border-r border-slate-900/60 pb-3 lg:pb-0 lg:pr-4 scrollbar-none">
+        <nav className="w-full lg:w-64 flex-shrink-0 flex lg:flex-col overflow-x-auto lg:overflow-x-visible gap-2 border-b lg:border-b-0 lg:border-r border-slate-900/60 pb-3 lg:pb-0 lg:pr-4 scrollbar-none lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
           {tabMetadata.map(tab => {
             const IconComponent = tab.icon;
             const isSelected = activeTab === tab.id;
@@ -282,6 +301,8 @@ export default function App() {
                   monthlyArchives={monthlyArchives}
                   onArchiveSaved={() => loadData(true)}
                   setActiveTab={(tab) => setActiveTab(tab)}
+                  todayShopTiming={todayShopTiming}
+                  onShopTimingChanged={(timing) => setTodayShopTiming(timing)}
                 />
               )}
               {activeTab === "pos" && (

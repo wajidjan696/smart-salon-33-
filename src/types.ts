@@ -6,6 +6,9 @@ export interface StaffMember {
   joinedDate: string;
   status: "active" | "inactive";
   startTime?: string; // Expected arrival time, e.g. "10:00" (24h format)
+  endTime?: string; // Expected shift end time, e.g. "00:00" or "23:00" (24h format)
+  lateNight20Enabled?: boolean; // Whether 20% late night duty commission is enabled
+  facial15Enabled?: boolean; // Whether 15% special facial (>1500) commission is enabled
 }
 
 export interface StaffLeave {
@@ -46,6 +49,8 @@ export interface Booking {
   status: "completed" | "pending" | "cancelled";
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
+  salonTime?: string; // Specific timing for salon services
+  pedicureTime?: string; // Specific timing for pedicure services
   createdAt: string; // ISO string
 }
 

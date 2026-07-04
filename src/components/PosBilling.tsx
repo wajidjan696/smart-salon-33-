@@ -868,8 +868,8 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { status: "paid", label: "✅ Paid (Full Received)", desc: "Payment received in cash/digital" },
-                { status: "unpaid", label: "❌ Unpaid (Khate Me Likhain)", desc: "Client's balance udhaar / khata" }
+                { status: "paid", label: "✅ PAYMENT RECEIVED (Paid)", desc: "Payment received in full" },
+                { status: "unpaid", label: "❌ PAYMENT NOT RECEIVED", desc: "Kal Dega / Udhaar Khata Record" }
               ].map(item => (
                 <button
                   key={item.status}
@@ -877,7 +877,9 @@ export default function PosBilling({ services, products, staff, onBookingAdded }
                   onClick={() => setPaymentStatus(item.status as any)}
                   className={`p-2 rounded-xl border text-left transition duration-200 ${
                     paymentStatus === item.status
-                      ? "border-amber-500 bg-amber-500/5 text-amber-400 font-bold"
+                      ? item.status === "paid" 
+                        ? "border-emerald-500 bg-emerald-500/5 text-emerald-400 font-bold"
+                        : "border-rose-500 bg-rose-500/5 text-rose-400 font-bold"
                       : "border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-400"
                   }`}
                 >

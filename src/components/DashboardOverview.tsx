@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Booking, StaffLeave, StaffMember, SalonService, MonthlyArchive, ShopTiming } from "../types";
+import { calculateBookingCommission } from "../commissionUtils";
 import { 
   saveMonthlyArchive, 
   deleteMonthlyArchive, 
@@ -58,6 +59,8 @@ interface DashboardOverviewProps {
   monthlyArchives: MonthlyArchive[];
   onArchiveSaved: () => void;
   setActiveTab: (tab: any) => void;
+  todayShopTiming: ShopTiming | null;
+  onShopTimingChanged: (timing: ShopTiming | null) => void;
 }
 
 export default function DashboardOverview({
@@ -67,7 +70,9 @@ export default function DashboardOverview({
   services,
   monthlyArchives,
   onArchiveSaved,
-  setActiveTab
+  setActiveTab,
+  todayShopTiming,
+  onShopTimingChanged
 }: DashboardOverviewProps) {
   // Month selection filter state
   const [selectedMonth, setSelectedMonth] = useState<string>("all"); // "all" or e.g. "2026-07"
@@ -94,28 +99,7 @@ export default function DashboardOverview({
 
   // Today's Bookings list states
   const [todayFilter, setTodayFilter] = useState<"all" | "appointment" | "walk_in">("all");
-
-  // Today's shop timing state
-  const [todayShopTiming, setTodayShopTiming] = useState<ShopTiming | null>(null);
   const [isTimingLoading, setIsTimingLoading] = useState(false);
-
-  const loadTodayTiming = async () => {
-    setIsTimingLoading(true);
-    try {
-      const timings = await getShopTimings();
-      const todayStr = new Date().toISOString().split('T')[0];
-      const found = timings.find(t => t.date === todayStr);
-      setTodayShopTiming(found || null);
-    } catch (err) {
-      console.error("Error loading shop timing on dashboard:", err);
-    } finally {
-      setIsTimingLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadTodayTiming();
-  }, []);
 
   const handleToggleShopState = async () => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -124,30 +108,31 @@ export default function DashboardOverview({
     
     setIsTimingLoading(true);
     try {
+      let updatedTiming: ShopTiming | null = null;
       if (!todayShopTiming) {
         // Open the shop
-        const newTiming: ShopTiming = {
+        updatedTiming = {
           id: todayStr,
           date: todayStr,
           openTime: timeStr,
         };
-        await saveShopTiming(newTiming);
+        await saveShopTiming(updatedTiming);
       } else if (!todayShopTiming.closeTime) {
         // Close the shop
-        const updatedTiming: ShopTiming = {
+        updatedTiming = {
           ...todayShopTiming,
           closeTime: timeStr,
         };
         await saveShopTiming(updatedTiming);
       } else {
         // Re-open (clear close time)
-        const updatedTiming: ShopTiming = {
+        updatedTiming = {
           ...todayShopTiming,
           closeTime: undefined,
         };
         await saveShopTiming(updatedTiming);
       }
-      await loadTodayTiming();
+      onShopTimingChanged(updatedTiming);
     } catch (err) {
       console.error("Error toggling shop timing:", err);
     } finally {
@@ -237,12 +222,16 @@ export default function DashboardOverview({
     return { name: method.name, value, color: method.color };
   }).filter(item => item.value > 0);
 
-  // 3. Staff Revenue Performance & 10% Commission (calculated on-the-fly)
+  // 3. Staff Revenue Performance & Dynamic Commission (10% standard / 20% late night)
   const staffPerformanceData = staff.map(member => {
     const memberBookings = filteredBookings.filter(b => b.staffId === member.id && b.status === "completed");
     const revenue = memberBookings.reduce((sum, b) => sum + b.totalAmount, 0);
     const clients = memberBookings.length;
-    const commission = Math.round(revenue * 0.10); // 10% commission
+    // Calculate commission booking-by-booking dynamically
+    const commission = memberBookings.reduce(
+      (sum, b) => sum + calculateBookingCommission(b, b.time, member),
+      0
+    );
 
     return {
       id: member.id,
@@ -299,7 +288,7 @@ export default function DashboardOverview({
       `Kiya aap waqai ${monthLabel} ke is record ko system me save karna chahte hain? Is me:\n\n` +
       `- Kul Kamai (Revenue): Rs. ${totalRevenue.toLocaleString()}\n` +
       `- Kul Bookings (Sales): ${totalBookingsCount}\n` +
-      `- Staff Commission (10%): Rs. ${totalCommissionSum.toLocaleString()}\n\n` +
+      `- Staff Commission (Dynamic): Rs. ${totalCommissionSum.toLocaleString()}\n\n` +
       `Yeh snapshot record permanently save ho jayega.`
     );
     if (!confirmation) return;
@@ -357,8 +346,13 @@ export default function DashboardOverview({
         <div className="absolute right-0 top-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -mr-20 -mt-20"></div>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
           <div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
-              Smart Salon 33 <span className="text-amber-400 text-sm font-normal px-2.5 py-1 bg-amber-500/10 rounded-full border border-amber-500/20">System Live</span>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center flex-wrap gap-2.5">
+              Smart Salon 33 
+              <span className="text-amber-400 text-xs font-normal px-2.5 py-1 bg-amber-500/10 rounded-full border border-amber-500/20">System Live</span>
+              <span className="text-emerald-400 text-xs font-bold px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20 flex items-center gap-1.5 font-mono shadow-inner">
+                <Calendar size={14} className="stroke-[2.5]" />
+                <span>Aaj Ki Tareeq (Today's Date): {getFormattedDashboardDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0])}</span>
+              </span>
             </h1>
             <p className="text-slate-400 text-sm mt-1">
               Khushamdeed! Salon ki performance, billing, staff chotti, aur client bookings ko manage karein.
@@ -708,9 +702,9 @@ export default function DashboardOverview({
                           <span className={`inline-flex items-center justify-center font-bold text-[9px] px-1.5 py-0.5 rounded w-fit ${
                             b.paymentStatus === "paid" 
                               ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/10" 
-                              : "bg-amber-500/10 text-amber-400 border border-amber-500/10"
+                              : "bg-rose-500/10 text-rose-400 border border-rose-500/10 animate-pulse"
                           }`}>
-                            {b.paymentStatus === "paid" ? "Paid" : "Khata / Unpaid"}
+                            {b.paymentStatus === "paid" ? "RECEIVED (PAID)" : "NOT RECEIVED (UDHAAR)"}
                           </span>
                         </div>
                       </td>
@@ -880,16 +874,16 @@ export default function DashboardOverview({
         </div>
       </div>
 
-      {/* Staff 10% Commission Ledger */}
+      {/* Staff Commission Ledger */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Percent size={18} className="text-amber-500" />
-              Stylists 10% Commission Ledger
+              Stylists Commission Ledger (10% & 20% Overtime)
             </h2>
             <p className="text-slate-400 text-xs">
-              Completed bookings par automatically computed 10% real-time commission payout
+              Completed bookings par automatically computed dynamic real-time commission payout
             </p>
           </div>
           <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-mono font-bold px-3 py-1.5 rounded-xl">
@@ -905,7 +899,7 @@ export default function DashboardOverview({
                 <th className="py-3 px-4 font-bold">Role</th>
                 <th className="py-3 px-4 font-bold text-right">Bookings Done</th>
                 <th className="py-3 px-4 font-bold text-right">Total Sales / Revenue</th>
-                <th className="py-3 px-4 font-bold text-right text-amber-400">10% Commission</th>
+                <th className="py-3 px-4 font-bold text-right text-amber-400">Commission Payout</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-850">
@@ -1202,7 +1196,7 @@ export default function DashboardOverview({
                           <th className="py-2.5 px-4 font-bold">Stylist</th>
                           <th className="py-2.5 px-4 text-right font-bold">Clients Handle</th>
                           <th className="py-2.5 px-4 text-right font-bold">Total Sales Done</th>
-                          <th className="py-2.5 px-4 text-right font-bold text-amber-400">10% Commission Payout</th>
+                          <th className="py-2.5 px-4 text-right font-bold text-amber-400">Commission Payout</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-900 text-slate-300 font-medium">
