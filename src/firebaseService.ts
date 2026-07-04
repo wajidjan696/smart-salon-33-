@@ -10,7 +10,7 @@ import {
   orderBy
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { SalonService, StaffMember, StaffLeave, Booking, MonthlyArchive, Expense, Product, ProductSale, KhataAccount, KhataLog, StaffAttendance } from "./types";
+import { SalonService, StaffMember, StaffLeave, Booking, MonthlyArchive, Expense, Product, ProductSale, KhataAccount, KhataLog, StaffAttendance, ShopTiming } from "./types";
 import { INITIAL_SERVICES, INITIAL_STAFF, INITIAL_LEAVES, INITIAL_BOOKINGS } from "./data";
 
 // Helper to seed data if empty or missing major parts
@@ -304,7 +304,7 @@ export async function clearAllDatabase(): Promise<void> {
   // Set flag in localStorage to prevent seedDatabaseIfEmpty from auto-filling
   localStorage.setItem("smartsalon_prevent_seeding", "true");
 
-  const collections = ["services", "staff", "leaves", "bookings", "monthly_archives", "expenses", "products", "product_sales", "khata_accounts", "khata_logs", "metadata", "staff_attendance"];
+  const collections = ["services", "staff", "leaves", "bookings", "monthly_archives", "expenses", "products", "product_sales", "khata_accounts", "khata_logs", "metadata", "staff_attendance", "shop_timings"];
   
   for (const col of collections) {
     try {
@@ -338,4 +338,24 @@ export async function saveStaffAttendance(attendance: StaffAttendance): Promise<
 export async function deleteStaffAttendance(id: string): Promise<void> {
   await deleteDoc(doc(db, "staff_attendance", id));
 }
+
+// 11. SHOP OPEN / CLOSE TIMINGS
+export async function getShopTimings(): Promise<ShopTiming[]> {
+  const q = query(collection(db, "shop_timings"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
+  const items: ShopTiming[] = [];
+  snap.forEach((doc) => {
+    items.push({ ...doc.data() } as ShopTiming);
+  });
+  return items;
+}
+
+export async function saveShopTiming(timing: ShopTiming): Promise<void> {
+  await setDoc(doc(db, "shop_timings", timing.id), timing);
+}
+
+export async function deleteShopTiming(id: string): Promise<void> {
+  await deleteDoc(doc(db, "shop_timings", id));
+}
+
 

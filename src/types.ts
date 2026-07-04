@@ -129,3 +129,12 @@ export interface StaffAttendance {
   punctualityMinutes?: number; // minutes after reference arrival time (e.g., 10:00 AM)
   notes?: string;
 }
+
+export interface ShopTiming {
+  id: string; // YYYY-MM-DD
+  date: string;
+  openTime: string; // e.g. "09:30"
+  closeTime?: string; // e.g. "21:00"
+  notes?: string;
+}
+

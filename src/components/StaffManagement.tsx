@@ -1,7 +1,18 @@
 import React, { useState } from "react";
-import { StaffMember, Booking, StaffLeave, StaffAttendance } from "../types";
+import { StaffMember, Booking, StaffLeave, StaffAttendance, ShopTiming } from "../types";
 import { motion, AnimatePresence } from "motion/react";
-import { addStaff, updateStaffStatus, updateStaff, deleteStaff, getStaffAttendance, saveStaffAttendance, deleteStaffAttendance } from "../firebaseService";
+import { 
+  addStaff, 
+  updateStaffStatus, 
+  updateStaff, 
+  deleteStaff, 
+  getStaffAttendance, 
+  saveStaffAttendance, 
+  deleteStaffAttendance,
+  getShopTimings,
+  saveShopTiming,
+  deleteShopTiming
+} from "../firebaseService";
 import { 
   Users, 
   UserPlus, 
@@ -16,7 +27,10 @@ import {
   Scissors,
   Edit,
   Trash2,
-  Clock
+  Clock,
+  Store,
+  Lock,
+  Unlock
 } from "lucide-react";
 
 interface StaffManagementProps {
@@ -38,6 +52,13 @@ export default function StaffManagement({
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showCheckInModal, setShowCheckInModal] = useState<StaffMember | null>(null);
 
+  // Shop Timings states
+  const [shopTimings, setShopTimings] = useState<ShopTiming[]>([]);
+  const [showShopTimingModal, setShowShopTimingModal] = useState<boolean>(false);
+  const [shopOpenTimeInput, setShopOpenTimeInput] = useState("");
+  const [shopCloseTimeInput, setShopCloseTimeInput] = useState("");
+  const [shopNotesInput, setShopNotesInput] = useState("");
+
   // Check-in Modal input states
   const [checkInTime, setCheckInTime] = useState("");
   const [checkInStatus, setCheckInStatus] = useState<"on_time" | "late">("on_time");
@@ -45,16 +66,67 @@ export default function StaffManagement({
 
   const loadAttendance = async () => {
     try {
-      const logs = await getStaffAttendance();
+      const [logs, timings] = await Promise.all([
+        getStaffAttendance(),
+        getShopTimings()
+      ]);
       setAttendanceRecords(logs);
+      setShopTimings(timings);
     } catch (err) {
-      console.error("Error loading attendance:", err);
+      console.error("Error loading attendance and timings:", err);
     }
   };
 
   React.useEffect(() => {
     loadAttendance();
   }, []);
+
+  // Today's shop timing object
+  const currentDayShopTiming = shopTimings.find(t => t.date === selectedAttendanceDate);
+
+  const handleOpenShopTimingModal = () => {
+    if (currentDayShopTiming) {
+      setShopOpenTimeInput(currentDayShopTiming.openTime);
+      setShopCloseTimeInput(currentDayShopTiming.closeTime || "");
+      setShopNotesInput(currentDayShopTiming.notes || "");
+    } else {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      setShopOpenTimeInput(timeStr);
+      setShopCloseTimeInput("");
+      setShopNotesInput("");
+    }
+    setShowShopTimingModal(true);
+  };
+
+  const handleSaveShopTiming = async () => {
+    try {
+      const updatedTiming: ShopTiming = {
+        id: selectedAttendanceDate, // Use date as document ID so there is exactly one record per date
+        date: selectedAttendanceDate,
+        openTime: shopOpenTimeInput || "10:00",
+        closeTime: shopCloseTimeInput || undefined,
+        notes: shopNotesInput.trim() || undefined
+      };
+      await saveShopTiming(updatedTiming);
+      setShowShopTimingModal(false);
+      await loadAttendance();
+    } catch (err) {
+      console.error("Error saving shop timing:", err);
+    }
+  };
+
+  const handleDeleteShopTiming = async () => {
+    if (window.confirm("Kiya aap aaj ki shop timing delete karna chahte hain?")) {
+      try {
+        await deleteShopTiming(selectedAttendanceDate);
+        setShowShopTimingModal(false);
+        await loadAttendance();
+      } catch (err) {
+        console.error("Error deleting shop timing:", err);
+      }
+    }
+  };
 
   const autoDetectStatus = (inputTime: string, staffExpectedTime?: string) => {
     if (!inputTime) return "on_time";
@@ -97,6 +169,13 @@ export default function StaffManagement({
         notes: attendanceNotes.trim() || undefined
       };
       await saveStaffAttendance(newAttendance);
+
+      // Auto-set staff directory status to "active" if it was inactive (jab staff enter ho shop pe, active hojaye)
+      if (showCheckInModal.status !== "active") {
+        await updateStaffStatus(showCheckInModal.id, "active");
+        onStaffAdded(); // notify parent to reload staff list
+      }
+
       setShowCheckInModal(null);
       await loadAttendance();
     } catch (err) {
@@ -509,28 +588,98 @@ export default function StaffManagement({
               </div>
             </div>
 
-            {/* List of Active Staff for Attendance */}
+            {/* Shop Opening & Closing Timings Card */}
+            <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20">
+                  <Store size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    🏪 Shop Timing Register
+                    {currentDayShopTiming ? (
+                      currentDayShopTiming.closeTime ? (
+                        <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Closed (Dukan Band)</span>
+                      ) : (
+                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Open (Dukan Khuli Hai)</span>
+                      )
+                    ) : (
+                      <span className="bg-slate-850 text-slate-400 border border-slate-800 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">No Record</span>
+                    )}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {currentDayShopTiming ? (
+                      <span>
+                        Dukan Kholne ka Waqt: <span className="font-mono font-bold text-emerald-400">{currentDayShopTiming.openTime}</span>
+                        {currentDayShopTiming.closeTime ? (
+                          <span> | Band Hone ka Waqt: <span className="font-mono font-bold text-rose-400">{currentDayShopTiming.closeTime}</span></span>
+                        ) : (
+                          <span className="text-slate-500 italic"> (Abhi band nahi hui)</span>
+                        )}
+                        {currentDayShopTiming.notes && <span className="block text-[10px] text-slate-400 mt-0.5">Note: {currentDayShopTiming.notes}</span>}
+                      </span>
+                    ) : (
+                      "Is tareeq par dukan khulne aur band karne ki timing darj karne ke liye button par click karein."
+                    )}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2.5 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={handleOpenShopTimingModal}
+                  className="w-full md:w-auto flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-850 text-slate-300 font-bold px-3.5 py-2 rounded-xl text-xs border border-slate-800 transition duration-150 cursor-pointer"
+                >
+                  <Clock size={13} className="text-amber-500" />
+                  {currentDayShopTiming ? "Timing Update/Close" : "Shop Timings Set Karein"}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-850/80 pt-4">
+              <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Karkunon Ki Rozana Hazri (Staff Attendance)</h4>
+            </div>
+
+            {/* List of Staff for Attendance */}
             <div className="space-y-3">
-              {staff.filter(st => st.status === "active").length === 0 ? (
+              {staff.length === 0 ? (
                 <div className="p-6 bg-slate-950/40 rounded-xl border border-slate-850 text-center text-xs text-slate-500">
-                  Koi Active staff member nahi mila. Hazri lagane ke liye staff list mein members add karein.
+                  Koi staff member nahi mila. Hazri lagane ke liye staff list mein members add karein.
                 </div>
               ) : (
-                staff.filter(st => st.status === "active").map((member) => {
-                  const record = attendanceRecords.find(
-                    r => r.staffId === member.id && r.date === selectedAttendanceDate
-                  );
+                [...staff]
+                  .sort((a, b) => {
+                    if (a.status === "active" && b.status === "inactive") return -1;
+                    if (a.status === "inactive" && b.status === "active") return 1;
+                    return 0;
+                  })
+                  .map((member) => {
+                    const record = attendanceRecords.find(
+                      r => r.staffId === member.id && r.date === selectedAttendanceDate
+                    );
 
-                  return (
-                    <div
-                      key={member.id}
-                      className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition hover:border-slate-700/60"
-                    >
-                      {/* Name & Role */}
-                      <div className="min-w-0">
-                        <span className="font-bold text-sm text-white block">{member.name}</span>
-                        <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{member.role}</span>
-                      </div>
+                    return (
+                      <div
+                        key={member.id}
+                        className={`p-4 rounded-xl border transition ${
+                          member.status === "active" 
+                            ? "bg-slate-950/50 border-slate-800/80 hover:border-slate-700/60" 
+                            : "bg-slate-950/20 border-slate-900 opacity-60 hover:opacity-80"
+                        } flex flex-col md:flex-row justify-between items-start md:items-center gap-4`}
+                      >
+                        {/* Name & Role */}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white block">{member.name}</span>
+                            {member.status === "inactive" && (
+                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded uppercase">
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{member.role}</span>
+                        </div>
 
                       {/* Log details or buttons */}
                       {record ? (
@@ -636,6 +785,10 @@ export default function StaffManagement({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {staff.map((member) => {
             const stats = getStaffStats(member.id);
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayRecord = attendanceRecords.find(
+              r => r.staffId === member.id && r.date === todayStr
+            );
 
             return (
               <motion.div
@@ -663,6 +816,31 @@ export default function StaffManagement({
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400 font-medium font-mono">
                       <Clock size={10} className="text-amber-500/80" />
                       <span>Shift Start: {member.startTime || "10:00"}</span>
+                    </div>
+
+                    {/* Today's Presence / Punctuality Badge */}
+                    <div className="mt-2.5">
+                      {todayRecord ? (
+                        todayRecord.status === "on_time" ? (
+                          <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-extrabold px-2 py-1 rounded-lg uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            🟢 Hazir (Waqt Par: {todayRecord.checkIn})
+                          </span>
+                        ) : todayRecord.status === "late" ? (
+                          <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-extrabold px-2 py-1 rounded-lg uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                            🟡 Hazir (Der Se: {todayRecord.checkIn})
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-extrabold px-2 py-1 rounded-lg uppercase">
+                            🔴 Ghair-Hazir (Absent)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 bg-slate-950 text-slate-500 border border-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg uppercase">
+                          ⚪ Hazri Nahi Lagi
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -855,6 +1033,108 @@ export default function StaffManagement({
                 >
                   Hazri Lagayein (Save Check-In)
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Shop Timing Modal Overlay */}
+      <AnimatePresence>
+        {showShopTimingModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 15 }}
+              className="bg-slate-900 border border-slate-800 max-w-md w-full rounded-2xl p-6 space-y-4 shadow-2xl"
+            >
+              <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Store className="text-amber-500" size={16} />
+                  Dukan Ki Open / Close Timing Log
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowShopTimingModal(false)}
+                  className="text-slate-500 hover:text-white transition text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-850">
+                  <span className="text-slate-500 block">Select Ki Gayi Tareeq (Date):</span>
+                  <span className="text-amber-400 text-sm font-mono font-bold block mt-0.5">{selectedAttendanceDate}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold block">🔓 Open Time (Kholne Ka Waqt):</label>
+                    <input
+                      type="time"
+                      value={shopOpenTimeInput}
+                      onChange={(e) => setShopOpenTimeInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3.5 text-white outline-none font-mono text-emerald-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold block">🔒 Close Time (Band Karne Ka Waqt):</label>
+                    <input
+                      type="time"
+                      value={shopCloseTimeInput}
+                      onChange={(e) => setShopCloseTimeInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2.5 px-3.5 text-white outline-none font-mono text-rose-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-slate-400 font-bold block">Note (Optional):</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Maslan: Aaj thora late open hui barish ki wajah se..."
+                    value={shopNotesInput}
+                    onChange={(e) => setShopNotesInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/50 rounded-xl py-2 px-3 text-white outline-none placeholder-slate-700 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between gap-3 pt-2">
+                {currentDayShopTiming ? (
+                  <button
+                    type="button"
+                    onClick={handleDeleteShopTiming}
+                    className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold py-2 px-3.5 rounded-xl transition text-xs border border-rose-500/20 cursor-pointer"
+                  >
+                    Delete Log
+                  </button>
+                ) : <div />}
+                
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowShopTimingModal(false)}
+                    className="bg-slate-850 hover:bg-slate-800 text-slate-300 font-semibold py-2 px-4 rounded-xl transition text-xs border border-slate-800 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveShopTiming}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 px-5 rounded-xl transition text-xs shadow-lg shadow-amber-500/10 cursor-pointer"
+                  >
+                    Save Timing
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
