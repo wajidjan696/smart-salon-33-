@@ -1,6 +1,13 @@
-import React, { useState } from "react";
-import { Booking, StaffLeave, StaffMember, SalonService, MonthlyArchive } from "../types";
-import { saveMonthlyArchive, deleteMonthlyArchive, deleteBooking, updateBookingStatus } from "../firebaseService";
+import React, { useState, useEffect } from "react";
+import { Booking, StaffLeave, StaffMember, SalonService, MonthlyArchive, ShopTiming } from "../types";
+import { 
+  saveMonthlyArchive, 
+  deleteMonthlyArchive, 
+  deleteBooking, 
+  updateBookingStatus,
+  getShopTimings,
+  saveShopTiming
+} from "../firebaseService";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   DollarSign, 
@@ -13,6 +20,8 @@ import {
   UserX,
   Plus,
   Lock,
+  Unlock,
+  Store,
   FileText,
   Trash2,
   Eye,
@@ -84,6 +93,66 @@ export default function DashboardOverview({
 
   // Today's Bookings list states
   const [todayFilter, setTodayFilter] = useState<"all" | "appointment" | "walk_in">("all");
+
+  // Today's shop timing state
+  const [todayShopTiming, setTodayShopTiming] = useState<ShopTiming | null>(null);
+  const [isTimingLoading, setIsTimingLoading] = useState(false);
+
+  const loadTodayTiming = async () => {
+    setIsTimingLoading(true);
+    try {
+      const timings = await getShopTimings();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const found = timings.find(t => t.date === todayStr);
+      setTodayShopTiming(found || null);
+    } catch (err) {
+      console.error("Error loading shop timing on dashboard:", err);
+    } finally {
+      setIsTimingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTodayTiming();
+  }, []);
+
+  const handleToggleShopState = async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    setIsTimingLoading(true);
+    try {
+      if (!todayShopTiming) {
+        // Open the shop
+        const newTiming: ShopTiming = {
+          id: todayStr,
+          date: todayStr,
+          openTime: timeStr,
+        };
+        await saveShopTiming(newTiming);
+      } else if (!todayShopTiming.closeTime) {
+        // Close the shop
+        const updatedTiming: ShopTiming = {
+          ...todayShopTiming,
+          closeTime: timeStr,
+        };
+        await saveShopTiming(updatedTiming);
+      } else {
+        // Re-open (clear close time)
+        const updatedTiming: ShopTiming = {
+          ...todayShopTiming,
+          closeTime: undefined,
+        };
+        await saveShopTiming(updatedTiming);
+      }
+      await loadTodayTiming();
+    } catch (err) {
+      console.error("Error toggling shop timing:", err);
+    } finally {
+      setIsTimingLoading(false);
+    }
+  };
 
   const handleQuickDelete = async (id: string, name: string) => {
     if (window.confirm(`Kiya aap waqai "${name}" ki aaj ki booking ko delete karna chahte hain?`)) {
@@ -273,6 +342,106 @@ export default function DashboardOverview({
             <Plus size={18} className="stroke-[3]" />
             Naya Client Bill / POS
           </button>
+        </div>
+      </div>
+
+      {/* Live Shop Status & Draggable Slider */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl relative overflow-hidden">
+        {/* Subtle decorative glow */}
+        <div className={`absolute -left-12 -top-12 w-32 h-32 rounded-full blur-2xl opacity-15 transition-all duration-500 ${
+          todayShopTiming ? (todayShopTiming.closeTime ? "bg-rose-500" : "bg-emerald-500") : "bg-amber-500"
+        }`} />
+        
+        <div className="flex items-center gap-4 relative z-10">
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${
+            todayShopTiming 
+              ? (todayShopTiming.closeTime 
+                  ? "bg-rose-500/10 text-rose-400 border-rose-500/25" 
+                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25 animate-pulse") 
+              : "bg-amber-500/10 text-amber-400 border-amber-500/25"
+          }`}>
+            <Store size={22} />
+          </div>
+          
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">🏪 Shop Status Register (Dukan Ka Haal)</h3>
+              {isTimingLoading && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              )}
+            </div>
+            
+            <p className="text-xs text-slate-400 mt-1">
+              {todayShopTiming ? (
+                todayShopTiming.closeTime ? (
+                  <span>
+                    🔴 Dukan abhi <span className="text-rose-400 font-bold uppercase">Band (Closed)</span> hai. Kholne ka waqt: <span className="font-mono text-emerald-400 font-bold">{todayShopTiming.openTime}</span> | Band hone ka waqt: <span className="font-mono text-rose-400 font-bold">{todayShopTiming.closeTime}</span>
+                  </span>
+                ) : (
+                  <span>
+                    🟢 Dukan abhi <span className="text-emerald-400 font-bold uppercase animate-pulse">Khuli (Open)</span> hai! Kholne ka waqt: <span className="font-mono text-emerald-400 font-bold">{todayShopTiming.openTime}</span>
+                  </span>
+                )
+              ) : (
+                <span>⚪ Aaj dukan khulne ka record abhi darj nahi kiya gaya. Kholne ke liye slide karein.</span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* The Interactive Slider Button */}
+        <div className="flex flex-col items-center gap-1.5 w-full md:w-auto relative z-10">
+          <div className="relative w-52 h-12 bg-slate-950 border border-slate-800 rounded-full p-1 overflow-hidden select-none cursor-pointer flex items-center">
+            {/* Track Label text based on status */}
+            <div className="absolute inset-0 flex items-center justify-center text-[10px] font-extrabold tracking-widest text-slate-500 pointer-events-none uppercase">
+              {todayShopTiming ? (
+                todayShopTiming.closeTime ? "Slide to Re-Open 🔓" : "Slide to Close 🔒"
+              ) : "Slide to Open 🔓"}
+            </div>
+            
+            {/* Animated Background Highlight */}
+            <div className={`absolute inset-y-1 left-1 rounded-full transition-all duration-500 ${
+              todayShopTiming 
+                ? (todayShopTiming.closeTime ? "w-10 bg-rose-500/10" : "w-40 bg-emerald-500/15")
+                : "w-10 bg-slate-900"
+            }`} />
+
+            {/* Sliding Handle */}
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 160 }}
+              dragElastic={0.05}
+              dragMomentum={false}
+              animate={{ x: (todayShopTiming && !todayShopTiming.closeTime) ? 160 : 0 }}
+              onDragEnd={(event, info) => {
+                const isOpen = todayShopTiming && !todayShopTiming.closeTime;
+                if (!isOpen && info.offset.x > 60) {
+                  handleToggleShopState();
+                } else if (isOpen && info.offset.x < -60) {
+                  handleToggleShopState();
+                }
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleShopState();
+              }}
+              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg transition-colors duration-300 relative z-20 ${
+                (todayShopTiming && !todayShopTiming.closeTime)
+                  ? "bg-emerald-500 text-slate-950 shadow-emerald-500/30"
+                  : "bg-slate-800 text-slate-300"
+              }`}
+            >
+              {(todayShopTiming && !todayShopTiming.closeTime) ? (
+                <Unlock size={15} className="stroke-[3]" />
+              ) : (
+                <Lock size={15} className="stroke-[3]" />
+              )}
+            </motion.div>
+          </div>
+          
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+            Drag or Click to Toggle Status
+          </span>
         </div>
       </div>
 

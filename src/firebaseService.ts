@@ -320,6 +320,17 @@ export async function clearAllDatabase(): Promise<void> {
   console.log("All salon collections cleared successfully for a fresh start.");
 }
 
+// Helper to remove undefined properties from objects so Firestore does not throw errors
+function cleanUndefined<T extends Record<string, any>>(obj: T): T {
+  const result = { ...obj };
+  Object.keys(result).forEach((key) => {
+    if (result[key] === undefined) {
+      delete result[key];
+    }
+  });
+  return result;
+}
+
 // 10. STAFF ATTENDANCE
 export async function getStaffAttendance(): Promise<StaffAttendance[]> {
   const q = query(collection(db, "staff_attendance"), orderBy("date", "desc"));
@@ -332,7 +343,7 @@ export async function getStaffAttendance(): Promise<StaffAttendance[]> {
 }
 
 export async function saveStaffAttendance(attendance: StaffAttendance): Promise<void> {
-  await setDoc(doc(db, "staff_attendance", attendance.id), attendance);
+  await setDoc(doc(db, "staff_attendance", attendance.id), cleanUndefined(attendance));
 }
 
 export async function deleteStaffAttendance(id: string): Promise<void> {
@@ -351,7 +362,7 @@ export async function getShopTimings(): Promise<ShopTiming[]> {
 }
 
 export async function saveShopTiming(timing: ShopTiming): Promise<void> {
-  await setDoc(doc(db, "shop_timings", timing.id), timing);
+  await setDoc(doc(db, "shop_timings", timing.id), cleanUndefined(timing));
 }
 
 export async function deleteShopTiming(id: string): Promise<void> {
