@@ -1,8 +1,74 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default deny catch-all
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+    
+    // Services rules: Require authentication
+    match /services/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Staff rules: Require authentication
+    match /staff/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Leaves rules: Require authentication
+    match /leaves/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Bookings rules: Require authentication
+    match /bookings/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Monthly archives rules: Require authentication
+    match /monthlyArchives/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Expenses rules: Require authentication
+    match /expenses/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Products rules: Require authentication
+    match /products/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Product Sales rules: Require authentication
+    match /productSales/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Khata Accounts rules: Require authentication
+    match /khataAccounts/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Khata Logs rules: Require authentication
+    match /khataLogs/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Attendance rules: Require authentication
+    match /attendance/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Shop timings rules: Require authentication
+    match /shopTimings/{id} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Metadata rules: Require authentication
+    match /metadata/{id} {
+      allow read, write: if request.auth != null;
     }
   }
 }

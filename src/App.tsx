@@ -20,6 +20,9 @@ import ServicesConfig from "./components/ServicesConfig";
 import ExpensesConfig from "./components/ExpensesConfig";
 import ProductsManager from "./components/ProductsManager";
 import KhataBook from "./components/KhataBook";
+import Login from "./components/Login";
+import { auth } from "./firebase";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, 
@@ -37,10 +40,16 @@ import {
   RotateCcw,
   Receipt,
   Package,
-  BookOpen
+  BookOpen,
+  LogOut,
+  UserCheck
 } from "lucide-react";
 
 export default function App() {
+  // Authentication states
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // Application Datasets State
   const [services, setServices] = useState<SalonService[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -145,7 +154,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadData();
+    // Listen to Firebase Auth changes
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (currentUser) {
+        loadData();
+      }
+    });
 
     // Setup digital clock
     const updateTime = () => {
@@ -155,7 +171,10 @@ export default function App() {
     updateTime();
     const interval = setInterval(updateTime, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   // Tabs layout metadata
@@ -172,6 +191,25 @@ export default function App() {
   ] as const;
 
   const isShopClosed = !!(todayShopTiming && todayShopTiming.closeTime);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#070b13] flex flex-col items-center justify-center space-y-4">
+        <div className="relative">
+          <div className="w-14 h-14 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+          <Flame size={20} className="absolute inset-0 m-auto text-amber-500 animate-pulse" />
+        </div>
+        <div className="text-center space-y-1">
+          <span className="text-sm font-extrabold text-white block tracking-wide uppercase">Smart Salon 33 Secure Core</span>
+          <p className="text-xs text-slate-400 font-medium">Checking authorization status... Thora sabar karein.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
 
   return (
     <div className={`min-h-screen bg-[#070b13] text-slate-100 flex flex-col font-sans transition-all duration-[2000ms] ease-in-out ${
@@ -240,6 +278,26 @@ export default function App() {
                 <RotateCcw size={11} />
                 <span>Restore Default</span>
               </button>
+            )}
+
+            {/* User Session Profile & Log Out */}
+            {user && (
+              <div className="flex items-center gap-2 border-l border-slate-800/80 pl-3.5 sm:pl-6">
+                <div className="hidden md:flex flex-col items-end text-right leading-tight select-none">
+                  <span className="text-[10px] text-slate-300 font-bold max-w-[120px] truncate" title={user.email || ""}>
+                    {user.displayName || user.email?.split("@")[0] || "User"}
+                  </span>
+                  <span className="text-[8px] text-amber-500 font-mono tracking-wider font-extrabold">AUTHENTICATED</span>
+                </div>
+                <button
+                  onClick={() => signOut(auth)}
+                  className="p-2 text-rose-400 bg-rose-950/10 hover:bg-rose-900/20 border border-rose-900/20 rounded-xl transition duration-150 font-bold active:scale-95 flex items-center justify-center gap-1 text-[11px] cursor-pointer"
+                  title="Sign out of the system safely"
+                >
+                  <LogOut size={13} />
+                  <span className="hidden sm:inline">Log Out</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

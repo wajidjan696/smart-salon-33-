@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "SalonService": {
+      "title": "Salon Service",
+      "description": "A service offered by the salon",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "durationMin": { "type": "number" }
+      },
+      "required": ["id", "name", "price", "category", "durationMin"]
+    },
+    "StaffMember": {
+      "title": "Staff Member",
+      "description": "A staff member of the salon",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "joinedDate": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "role", "joinedDate", "status"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "An appointment or walk-in booking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "bookingType": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "clientName", "bookingType", "staffId", "staffName", "totalAmount", "paymentMethod", "paymentStatus", "status", "date", "time", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/services/{id}": {
+      "schema": "SalonService",
+      "description": "List of salon services"
+    },
+    "/staff/{id}": {
+      "schema": "StaffMember",
+      "description": "List of staff members"
+    },
+    "/bookings/{id}": {
+      "schema": "Booking",
+      "description": "Salon bookings and walk-ins"
+    }
+  }
+}
