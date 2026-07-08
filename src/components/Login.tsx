@@ -72,7 +72,25 @@ export default function Login() {
       setSuccess("Google Account ke sath login kamyabi se mukammal hua!");
     } catch (err: any) {
       console.error("Google Auth error:", err);
-      setError("Google Sign-In cancel ya fail ho gaya. Dobara koshish karein.");
+      
+      let pakiGoogleError = "Google Sign-In fail ho gaya. Dobara koshish karein.";
+      
+      // Check if we are embedded in an iframe (e.g. AI Studio preview)
+      const isInIframe = window.self !== window.top;
+      
+      if (isInIframe) {
+        pakiGoogleError = "⚠️ Iframe security restriction ki wajah se Google Sign-In block ho gaya hai. Isse hal karne ke liye upar right side par 'Open in new tab' (↗️) button par click karke app naye tab me kholein, ya phir Email/Password use karein (jo iframe me bhi 100% chalta hai!).";
+      } else if (err.code === "auth/unauthorized-domain") {
+        pakiGoogleError = "⚠️ Firebase Console Config Error: Is domain par Google Sign-In authorized nahi hai. Firebase Settings me 'Authorized Domains' ke andar is url ko add karein.";
+      } else if (err.code === "auth/popup-blocked") {
+        pakiGoogleError = "⚠️ Browser Popup Blocked: Aapke browser ne login popup block kar diya hai. Meharbani karke top bar se popups allow karein.";
+      } else if (err.message && err.message.includes("third-party")) {
+        pakiGoogleError = "⚠️ Storage Blocked: Browser ne third-party login cookies block kiye hain. Meharbani karke naye tab (↗️) me app open karke Google login karein.";
+      } else if (err.message) {
+        pakiGoogleError = `Google Sign-In Error: ${err.message}. (TIPS: Naye tab ↗️ me open karein ya email/password se account banayein)`;
+      }
+      
+      setError(pakiGoogleError);
     } finally {
       setLoading(false);
     }
