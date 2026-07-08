@@ -40,7 +40,9 @@ import {
   Package,
   BookOpen,
   LogOut,
-  UserCheck
+  UserCheck,
+  Menu,
+  MoreHorizontal
 } from "lucide-react";
 
 export default function App() {
@@ -59,6 +61,7 @@ export default function App() {
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isPreventSeeding, setIsPreventSeeding] = useState(() => localStorage.getItem("smartsalon_prevent_seeding") === "true");
@@ -228,8 +231,21 @@ export default function App() {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
+  const mobileMainTabs = [
+    { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+    { id: "pos", label: "Billing", icon: CreditCard },
+    { id: "bookings", label: "Bookings", icon: Calendar },
+    { id: "khata", label: "Khata", icon: BookOpen },
+  ] as const;
+
+  const isMainTabActive = mobileMainTabs.some(t => t.id === activeTab);
+  const activeMoreTab = tabMetadata.find(t => t.id === activeTab && !mobileMainTabs.some(mt => mt.id === t.id));
+  const isMoreTabSelected = !isMainTabActive;
+  const moreButtonLabel = activeMoreTab ? activeMoreTab.label.split(" (")[0].split(" / ")[0] : "More";
+  const MoreButtonIcon = activeMoreTab ? activeMoreTab.icon : Menu;
+
   return (
-    <div className={`min-h-screen bg-[#070b13] text-slate-100 flex flex-col font-sans transition-all duration-[2000ms] ease-in-out ${
+    <div className={`min-h-screen bg-[#070b13] text-slate-100 flex flex-col font-sans transition-all duration-[2000ms] ease-in-out pb-20 lg:pb-0 ${
       isShopClosed 
         ? "grayscale-[0.65] brightness-[0.45] saturate-[0.4] contrast-[0.9] [text-shadow:0_0_8px_rgba(251,191,36,0.1)]" 
         : ""
@@ -244,13 +260,10 @@ export default function App() {
       <header className="border-b border-slate-900 bg-slate-950/60 backdrop-blur-md sticky top-0 z-40 px-4 py-3 sm:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black text-lg shadow-md shadow-amber-500/20">
-              33
-            </div>
+          <div className="flex items-center gap-3">
             <div>
-              <span className="text-sm font-black text-white block tracking-wide uppercase leading-none">Smart Salon 33</span>
-              <span className="text-[10px] text-amber-500 font-bold block mt-0.5 tracking-widest uppercase">Admin Desk</span>
+              <span className="text-base font-black text-white block tracking-wide uppercase leading-none">Smart Salon 33</span>
+              <span className="text-[10px] text-amber-500 font-bold block mt-1 tracking-widest uppercase">Admin Desk</span>
             </div>
           </div>
 
@@ -266,7 +279,7 @@ export default function App() {
             <button
               onClick={() => loadData(true)}
               disabled={refreshing}
-              className="flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-900 hover:bg-slate-850 hover:text-white px-3 py-1.5 border border-slate-800/80 rounded-xl transition duration-150 font-medium active:scale-95 disabled:opacity-50"
+              className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-900 hover:bg-slate-850 hover:text-white px-3 py-1.5 border border-slate-800/80 rounded-xl transition duration-150 font-medium active:scale-95 disabled:opacity-50"
               title="Refresh database collections"
             >
               <RefreshCw size={11} className={`${refreshing ? "animate-spin" : ""}`} />
@@ -277,7 +290,7 @@ export default function App() {
             <button
               onClick={handleFreshStart}
               disabled={refreshing}
-              className="flex items-center gap-1.5 text-[11px] text-rose-400 bg-rose-950/20 hover:bg-rose-950/40 hover:text-rose-300 px-3 py-1.5 border border-rose-900/30 rounded-xl transition duration-150 font-bold active:scale-95 disabled:opacity-50"
+              className="hidden lg:flex items-center gap-1.5 text-[11px] text-rose-400 bg-rose-950/20 hover:bg-rose-950/40 hover:text-rose-300 px-3 py-1.5 border border-rose-900/30 rounded-xl transition duration-150 font-bold active:scale-95 disabled:opacity-50"
               title="Sab data clear karke bilkul fresh start karein"
             >
               <Trash2 size={11} />
@@ -289,7 +302,7 @@ export default function App() {
               <button
                 onClick={handleRestoreSeededData}
                 disabled={refreshing}
-                className="flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/40 hover:text-emerald-300 px-3 py-1.5 border border-emerald-900/30 rounded-xl transition duration-150 font-bold active:scale-95 disabled:opacity-50"
+                className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/40 hover:text-emerald-300 px-3 py-1.5 border border-emerald-900/30 rounded-xl transition duration-150 font-bold active:scale-95 disabled:opacity-50"
                 title="Official baseline values restore karein"
               >
                 <RotateCcw size={11} />
@@ -308,11 +321,11 @@ export default function App() {
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="p-2 text-rose-400 bg-rose-950/10 hover:bg-rose-900/20 border border-rose-900/20 rounded-xl transition duration-150 font-bold active:scale-95 flex items-center justify-center gap-1 text-[11px] cursor-pointer"
+                  className="hidden sm:flex p-2 text-rose-400 bg-rose-950/10 hover:bg-rose-900/20 border border-rose-900/20 rounded-xl transition duration-150 font-bold active:scale-95 items-center justify-center gap-1 text-[11px] cursor-pointer"
                   title="Sign out of the system safely"
                 >
                   <LogOut size={13} />
-                  <span className="hidden sm:inline">Log Out</span>
+                  <span>Log Out</span>
                 </button>
               </div>
             )}
@@ -322,8 +335,8 @@ export default function App() {
 
       {/* Main Container */}
       <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col lg:flex-row gap-6">
-        {/* Navigation Sidebar (Vertical left-hand menu on desktop, horizontal scroll on mobile) */}
-        <nav className="w-full lg:w-64 flex-shrink-0 flex lg:flex-col overflow-x-auto lg:overflow-x-visible gap-2 border-b lg:border-b-0 lg:border-r border-slate-900/60 pb-3 lg:pb-0 lg:pr-4 scrollbar-none lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
+        {/* Navigation Sidebar (Vertical left-hand menu on desktop, hidden on mobile) */}
+        <nav className="hidden lg:flex lg:w-64 flex-shrink-0 flex-col gap-2 border-r border-slate-900/60 pr-4 lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto scrollbar-none">
           {tabMetadata.map(tab => {
             const IconComponent = tab.icon;
             const isSelected = activeTab === tab.id;
@@ -332,7 +345,7 @@ export default function App() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as ActiveTab)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition duration-200 whitespace-nowrap lg:whitespace-normal w-auto lg:w-full select-none ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition duration-200 w-full select-none ${
                   isSelected
                     ? "bg-gradient-to-r from-amber-500/10 to-amber-500/5 border border-amber-500/30 text-amber-400 shadow-md shadow-amber-500/5"
                     : "border border-transparent hover:border-slate-800 hover:bg-slate-900/40 text-slate-400 hover:text-slate-200"
@@ -432,8 +445,198 @@ export default function App() {
         </main>
       </div>
 
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900/80 px-4 py-2 flex justify-around items-center shadow-2xl safe-bottom backdrop-blur-md">
+        {mobileMainTabs.map(tab => {
+          const Icon = tab.icon;
+          const isSelected = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id as ActiveTab);
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition duration-150 relative ${
+                isSelected ? "text-amber-400" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Icon size={18} className={isSelected ? "scale-110" : "scale-100 transition-transform duration-200"} />
+              <span className="text-[10px] font-bold mt-1 tracking-wide">{tab.label}</span>
+              {isSelected && (
+                <motion.div
+                  layoutId="mobileActiveIndicator"
+                  className="absolute -bottom-1.5 w-5 h-0.5 bg-amber-500 rounded-full"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+            </button>
+          );
+        })}
+        
+        {/* The More Button */}
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition duration-150 relative ${
+            isMoreTabSelected ? "text-amber-400" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <MoreButtonIcon size={18} className={isMoreTabSelected ? "scale-110" : "scale-100"} />
+          <span className="text-[10px] font-bold mt-1 tracking-wide">{moreButtonLabel}</span>
+          {isMoreTabSelected && (
+            <motion.div
+              layoutId="mobileActiveIndicator"
+              className="absolute -bottom-1.5 w-5 h-0.5 bg-amber-500 rounded-full"
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            />
+          )}
+        </button>
+      </div>
+
+      {/* Mobile Settings & Pages Bottom Drawer */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 lg:hidden"
+            />
+            
+            {/* Sliding Panel */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-slate-950 border-t border-slate-800/80 rounded-t-3xl z-50 p-6 overflow-y-auto lg:hidden"
+            >
+              {/* Drag indicator */}
+              <div className="w-12 h-1 bg-slate-800 rounded-full mx-auto mb-6" />
+
+              {/* Drawer header */}
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Smart Menu & Settings</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Tezi se kisi bhi safhe par jaane ke liye select karein</p>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold"
+                >
+                  Close
+                </button>
+              </div>
+              
+              {/* Grid of all 9 options */}
+              <div className="grid grid-cols-3 gap-3 mb-8">
+                {tabMetadata.map(tab => {
+                  const Icon = tab.icon;
+                  const isSelected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        setActiveTab(tab.id as ActiveTab);
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`flex flex-col items-center justify-center p-3 rounded-2xl border text-center transition-all duration-200 ${
+                        isSelected
+                          ? "bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-md shadow-amber-500/5"
+                          : "bg-slate-900/40 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80"
+                      }`}
+                    >
+                      <div className={`p-2 rounded-xl ${tab.color} flex items-center justify-center mb-1.5`}>
+                        <Icon size={16} />
+                      </div>
+                      <span className="text-[9px] font-extrabold leading-tight tracking-wide uppercase break-words w-full">
+                        {tab.label.split(" (")[0].split(" / ")[0]}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Quick Actions & Settings */}
+              <div className="border-t border-slate-900 pt-6 space-y-4">
+                <h4 className="text-[10px] font-bold text-amber-500 tracking-widest uppercase">Admin Quick Tools</h4>
+                
+                {/* Live Mobile Clock */}
+                <div className="flex items-center justify-between bg-slate-900 border border-slate-800/80 px-4 py-3 rounded-xl text-xs">
+                  <div className="flex items-center gap-2 text-slate-300 font-semibold">
+                    <Clock size={14} className="text-amber-500 animate-pulse" />
+                    <span>Time (Waqt):</span>
+                  </div>
+                  <span className="font-mono text-white font-bold">{currentTime}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Sync Button */}
+                  <button
+                    onClick={() => {
+                      loadData(true);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    disabled={refreshing}
+                    className="flex items-center justify-center gap-2 text-xs text-slate-300 bg-slate-900 hover:bg-slate-850 px-4 py-3 border border-slate-800 rounded-xl transition duration-150 font-bold active:scale-95 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
+                    <span>{refreshing ? "Syncing..." : "Sync Data"}</span>
+                  </button>
+
+                  {/* Logout */}
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="flex items-center justify-center gap-2 text-xs text-rose-400 bg-rose-950/20 hover:bg-rose-950/40 px-4 py-3 border border-rose-900/30 rounded-xl transition duration-150 font-bold active:scale-95"
+                  >
+                    <LogOut size={12} />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  {/* Restore default button */}
+                  {isPreventSeeding && (
+                    <button
+                      onClick={() => {
+                        handleRestoreSeededData();
+                        setIsMobileMenuOpen(false);
+                      }}
+                      disabled={refreshing}
+                      className="w-full flex items-center justify-center gap-2 text-xs text-emerald-400 bg-emerald-950/15 hover:bg-emerald-950/30 px-4 py-3 border border-emerald-900/20 rounded-xl transition duration-150 font-extrabold active:scale-95 disabled:opacity-50"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Restore Default Data</span>
+                    </button>
+                  )}
+
+                  {/* Fresh Start button */}
+                  <button
+                    onClick={() => {
+                      handleFreshStart();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    disabled={refreshing}
+                    className="w-full flex items-center justify-center gap-2 text-xs text-rose-500 bg-rose-950/10 hover:bg-rose-950/30 px-4 py-3 border border-rose-900/20 rounded-xl transition duration-150 font-extrabold active:scale-95 disabled:opacity-50"
+                  >
+                    <Trash2 size={12} />
+                    <span>Fresh Start (Khali Karein)</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Footer bar */}
-      <footer className="border-t border-slate-950 bg-slate-950/80 py-4 px-4 text-center text-[10px] text-slate-600 font-medium">
+      <footer className="border-t border-slate-950 bg-slate-950/80 py-4 px-4 text-center text-[10px] text-slate-600 font-medium pb-24 lg:pb-4">
         <p>© 2026 Smart Salon 33. All rights reserved. Created in Cloud Native AI Workspace.</p>
       </footer>
     </div>

@@ -50,9 +50,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         
         {/* Brand identity */}
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg shadow-amber-500/20 mb-3.5">
-            33
-          </div>
           <h1 className="text-2xl font-black text-white tracking-wide uppercase">
             Smart Salon 33
           </h1>
