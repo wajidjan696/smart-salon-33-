@@ -16,24 +16,40 @@ import { INITIAL_SERVICES, INITIAL_STAFF, INITIAL_LEAVES, INITIAL_BOOKINGS } fro
 
 // Helper to seed data if empty or missing major parts
 export async function seedDatabaseIfEmpty() {
-  if (localStorage.getItem("smartsalon_prevent_seeding") === "true") {
-    console.log("Database auto-seeding skipped because Fresh Start is enabled.");
-    return;
-  }
+  const isPreventSeeding = localStorage.getItem("smartsalon_prevent_seeding") === "true";
+  
   try {
     // 1. Ensure all official services are present in the database (non-destructive sync)
     const servicesSnap = await getDocs(collection(db, "services"));
-    const existingServiceIds = new Set(servicesSnap.docs.map(doc => doc.id));
-    let seededServicesCount = 0;
-
-    for (const service of INITIAL_SERVICES) {
-      if (!existingServiceIds.has(service.id)) {
+    
+    // If the services collection is completely empty, we force-seed it regardless of prevent flag,
+    // because an empty services list makes the POS & services screen unusable.
+    if (servicesSnap.empty) {
+      console.log("Services collection is empty. Forcing auto-seed of official services...");
+      localStorage.removeItem("smartsalon_prevent_seeding");
+      for (const service of INITIAL_SERVICES) {
         await setDoc(doc(db, "services", service.id), service);
-        seededServicesCount++;
+      }
+      console.log(`Seeded all ${INITIAL_SERVICES.length} official services to the menu.`);
+    } else if (!isPreventSeeding) {
+      const existingServiceIds = new Set(servicesSnap.docs.map(doc => doc.id));
+      let seededServicesCount = 0;
+
+      for (const service of INITIAL_SERVICES) {
+        if (!existingServiceIds.has(service.id)) {
+          await setDoc(doc(db, "services", service.id), service);
+          seededServicesCount++;
+        }
+      }
+      if (seededServicesCount > 0) {
+        console.log(`Seeded ${seededServicesCount} missing official services to the menu.`);
       }
     }
-    if (seededServicesCount > 0) {
-      console.log(`Seeded ${seededServicesCount} missing official services to the menu.`);
+
+    // Skip the rest of seeding if prevent seeding flag is true
+    if (isPreventSeeding && !servicesSnap.empty) {
+      console.log("Database auto-seeding for staff/bookings skipped because Fresh Start is enabled.");
+      return;
     }
 
     // 2. Ensure all official staff members are present (non-destructive sync)
