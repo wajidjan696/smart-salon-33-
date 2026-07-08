@@ -21,8 +21,6 @@ import ExpensesConfig from "./components/ExpensesConfig";
 import ProductsManager from "./components/ProductsManager";
 import KhataBook from "./components/KhataBook";
 import Login from "./components/Login";
-import { auth } from "./firebase";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, 
@@ -47,7 +45,7 @@ import {
 
 export default function App() {
   // Authentication states
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<{ displayName: string; email: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Application Datasets State
@@ -153,15 +151,35 @@ export default function App() {
     }
   };
 
+  const handleLoginSuccess = (username: string) => {
+    const formattedUser = username.trim().toLowerCase();
+    const loggedInUser = { 
+      displayName: formattedUser === "admn" ? "Admin Desk (admn)" : "Admin Desk (admin)", 
+      email: `${formattedUser}@smartsalon33.com` 
+    };
+    localStorage.setItem("smartsalon_user", JSON.stringify(loggedInUser));
+    setUser(loggedInUser);
+    loadData();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("smartsalon_user");
+    setUser(null);
+  };
+
   useEffect(() => {
-    // Listen to Firebase Auth changes
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (currentUser) {
+    // Check local storage for user session
+    const savedUserStr = localStorage.getItem("smartsalon_user");
+    if (savedUserStr) {
+      try {
+        const savedUser = JSON.parse(savedUserStr);
+        setUser(savedUser);
         loadData();
+      } catch (e) {
+        localStorage.removeItem("smartsalon_user");
       }
-    });
+    }
+    setAuthLoading(false);
 
     // Setup digital clock
     const updateTime = () => {
@@ -172,7 +190,6 @@ export default function App() {
     const interval = setInterval(updateTime, 1000);
 
     return () => {
-      unsubscribe();
       clearInterval(interval);
     };
   }, []);
@@ -208,7 +225,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <Login />;
+    return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -290,7 +307,7 @@ export default function App() {
                   <span className="text-[8px] text-amber-500 font-mono tracking-wider font-extrabold">AUTHENTICATED</span>
                 </div>
                 <button
-                  onClick={() => signOut(auth)}
+                  onClick={handleLogout}
                   className="p-2 text-rose-400 bg-rose-950/10 hover:bg-rose-900/20 border border-rose-900/20 rounded-xl transition duration-150 font-bold active:scale-95 flex items-center justify-center gap-1 text-[11px] cursor-pointer"
                   title="Sign out of the system safely"
                 >
