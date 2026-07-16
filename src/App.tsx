@@ -105,7 +105,7 @@ export default function App() {
       setIsPreventSeeding(false);
       // Wait a moment for state/storage sync
       await new Promise(resolve => setTimeout(resolve, 100));
-      await loadData();
+      await loadData(false, true);
       alert("Official default data kamyabi se restore ho gaya hai.");
     } catch (err) {
       console.error(err);
@@ -116,13 +116,13 @@ export default function App() {
   };
 
   // Synchronize database and state
-  const loadData = async (isSilent = false) => {
+  const loadData = async (isSilent = false, forceSeed = false) => {
     if (!isSilent) setLoading(true);
     else setRefreshing(true);
 
     try {
-      // 1. Seed if empty
-      await seedDatabaseIfEmpty();
+      // 1. Seed if empty (only if explicitly forced)
+      await seedDatabaseIfEmpty(forceSeed);
 
       // 2. Fetch everything
       const [allServices, allStaff, allLeaves, allBookings, allArchives, allProducts, allShopTimings] = await Promise.all([

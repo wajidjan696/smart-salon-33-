@@ -15,7 +15,12 @@ import { SalonService, StaffMember, StaffLeave, Booking, MonthlyArchive, Expense
 import { INITIAL_SERVICES, INITIAL_STAFF, INITIAL_LEAVES, INITIAL_BOOKINGS } from "./data";
 
 // Helper to seed data if empty or missing major parts
-export async function seedDatabaseIfEmpty() {
+export async function seedDatabaseIfEmpty(force = false) {
+  if (!force) {
+    // Completely disable automatic seeding by default so the user has 100% control.
+    // No auto-seeding will ever happen when they delete items or boot the app.
+    return;
+  }
   const isPreventSeeding = localStorage.getItem("smartsalon_prevent_seeding") === "true";
   
   try {
